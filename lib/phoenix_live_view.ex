@@ -316,7 +316,7 @@ defmodule Phoenix.LiveView do
   per user would likely be too expensive. For these cases, LiveView provides
   `Phoenix.LiveComponent`, which are rendered using [`live_component/3`](`Phoenix.LiveView.Helpers.live_render/3`):
 
-      <%= live_component(@socket, UserComponent, id: user.id, user: user) %>
+      <%= live_component(UserComponent, id: user.id, user: user) %>
 
   Components have their own `c:mount/3` and `c:handle_event/3` callbacks, as well as their
   own state with change tracking support. Components are also lightweight as they
@@ -524,7 +524,7 @@ defmodule Phoenix.LiveView do
         end
       end
   """
-  def connected?(%Socket{connected?: connected?}), do: connected?
+  def connected?(%Socket{transport_pid: transport_pid}), do: transport_pid != nil
 
   @doc """
   Assigns a value into the socket only if it does not exist.
@@ -881,14 +881,14 @@ defmodule Phoenix.LiveView do
   def push_patch(%Socket{} = socket, opts) do
     %{to: to} = opts = push_opts!(opts, "push_patch/2")
 
-    case Phoenix.LiveView.Utils.live_link_info!(socket, socket.root_view, to) do
+    case Phoenix.LiveView.Utils.live_link_info!(socket, socket.private.root_view, to) do
       {:internal, params, action, _parsed_uri} ->
         put_redirect(socket, {:live, {params, action}, opts})
 
       {:external, _uri} ->
         raise ArgumentError,
               "cannot push_patch/2 to #{inspect(to)} because the given path " <>
-                "does not point to the current root view #{inspect(socket.root_view)}"
+                "does not point to the current root view #{inspect(socket.private.root_view)}"
     end
   end
 

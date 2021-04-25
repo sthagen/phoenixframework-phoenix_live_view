@@ -200,23 +200,71 @@ defmodule Phoenix.LiveView.Helpers do
   All of the `assigns` given are forwarded directly to the
   `live_component`:
 
-      <%= live_component(@socket, MyApp.WeatherComponent, id: "thermostat", city: "Kraków") %>
+      <%= live_component(MyApp.WeatherComponent, id: "thermostat", city: "Kraków") %>
 
   Note the `:id` won't necessarily be used as the DOM ID.
   That's up to the component. However, note that the `:id` has
   a special meaning: whenever an `:id` is given, the component
   becomes stateful. Otherwise, `:id` is always set to `nil`.
   """
-  # TODO: Deprecate the socket as argument
-  defmacro live_component(socket, component, assigns \\ [], do_block \\ []) do
-    {do_block, assigns} =
+  defmacro live_component(component, assigns \\ [], do_block \\ []) do
+    if match?({:@, _, [{:socket, _, _}]}, component) or match?({:socket, _, _}, component) do
+      IO.warn(
+        "passing the @socket to live_component is no longer necessary, " <>
+          "please remove the socket argument",
+        Macro.Env.stacktrace(__CALLER__)
+      )
+    end
+
+    {inner_block, do_block, assigns} =
       case {do_block, assigns} do
-        {[do: do_block], _} -> {do_block, assigns}
-        {_, [do: do_block]} -> {do_block, []}
-        {_, _} -> {nil, assigns}
+        {[do: do_block], _} -> {rewrite_do(do_block, __CALLER__), [], assigns}
+        {_, [do: do_block]} -> {rewrite_do(do_block, __CALLER__), [], []}
+        {_, _} -> {nil, do_block, assigns}
       end
 
-    {assigns, inner_block} = rewrite_do(do_block, assigns, __CALLER__)
+    if match?({:__aliases__, _, _}, component) or is_atom(component) or is_list(assigns) or is_map(assigns) do
+      quote do
+        Phoenix.LiveView.Helpers.__live_component__(
+          unquote(component).__live__(),
+          unquote(assigns),
+          unquote(inner_block)
+        )
+      end
+    else
+      quote do
+        case unquote(component) do
+          %Phoenix.LiveView.Socket{} ->
+            Phoenix.LiveView.Helpers.__live_component__(
+              unquote(assigns).__live__(),
+              unquote(do_block),
+              unquote(inner_block)
+            )
+
+          component ->
+            Phoenix.LiveView.Helpers.__live_component__(
+              component.__live__(),
+              unquote(assigns),
+              unquote(inner_block)
+            )
+        end
+      end
+    end
+  end
+
+  defmacro live_component(socket, component, assigns, do_block) do
+    IO.warn(
+      "passing the @socket to live_component is no longer necessary, " <>
+        "please remove the socket argument",
+      Macro.Env.stacktrace(__CALLER__)
+    )
+
+    {inner_block, assigns} =
+      case {do_block, assigns} do
+        {[do: do_block], _} -> {rewrite_do(do_block, __CALLER__), assigns}
+        {_, [do: do_block]} -> {rewrite_do(do_block, __CALLER__), []}
+        {_, _} -> {nil, assigns}
+      end
 
     quote do
       # Fixes unused variable compilation warning
@@ -230,23 +278,56 @@ defmodule Phoenix.LiveView.Helpers do
     end
   end
 
-  defp rewrite_do(nil, opts, _caller), do: {opts, nil}
+  @doc """
+  Renders a component defined by the given function.
 
-  defp rewrite_do([{:->, meta, _} | _] = do_block, opts, _caller) do
-    inner_fun = {:fn, meta, do_block}
+  It takes two optional arguments, the assigns to pass to the given function
+  and a do-block - which will be converted into a `@inner_block`  assign (see
+  `render_block/3` for more information).
 
-    quoted =
-      quote do
-        fn parent_changed, arg ->
-          var!(assigns) = unquote(__MODULE__).__render_inner_fun__(var!(assigns), parent_changed)
-          unquote(inner_fun).(arg)
-        end
+  The given function must expect one argument, which are the `assigns` as a
+  map.
+
+  ## Examples
+
+  The function can be either local:
+
+      <%= component(&weather_component/1, city: "Kraków") %>
+
+  Or remote:
+
+      <%= component(&MyApp.Weather.component/1, city: "Kraków") %>
+
+  """
+  defmacro component(func, assigns \\ [], do_block \\ []) do
+    {inner_block, assigns} =
+      case {do_block, assigns} do
+        {[do: do_block], _} -> {rewrite_do(do_block, __CALLER__), assigns}
+        {_, [do: do_block]} -> {rewrite_do(do_block, __CALLER__), []}
+        {_, _} -> {nil, assigns}
       end
 
-    {opts, quoted}
+    quote do
+      Phoenix.LiveView.Helpers.__component__(
+        unquote(func),
+        unquote(assigns),
+        unquote(inner_block)
+      )
+    end
   end
 
-  defp rewrite_do(do_block, opts, caller) do
+  defp rewrite_do([{:->, meta, _} | _] = do_block, _caller) do
+    inner_fun = {:fn, meta, do_block}
+
+    quote do
+      fn parent_changed, arg ->
+        var!(assigns) = unquote(__MODULE__).__render_inner_fun__(var!(assigns), parent_changed)
+        unquote(inner_fun).(arg)
+      end
+    end
+  end
+
+  defp rewrite_do(do_block, caller) do
     unless Macro.Env.has_var?(caller, {:assigns, nil}) and
              Macro.Env.has_var?(caller, {:changed, Phoenix.LiveView.Engine}) do
       raise ArgumentError, """
@@ -254,24 +335,21 @@ defmodule Phoenix.LiveView.Helpers do
 
       Please pass a `->` clause to do/end instead, for example:
 
-          live_component @socket, GridComponent, entries: @entries do
+          live_component GridComponent, entries: @entries do
             new_assigns -> "New entry: " <> new_assigns[:entry]
           end
       """
     end
 
     # TODO: deprecate implicit assigns (i.e. do/end without -> should not get any assign)
-    quoted =
-      quote do
-        fn changed, extra_assigns ->
-          var!(assigns) =
-            unquote(__MODULE__).__render_inner_do__(var!(assigns), changed, extra_assigns)
+    quote do
+      fn changed, extra_assigns ->
+        var!(assigns) =
+          unquote(__MODULE__).__render_inner_do__(var!(assigns), changed, extra_assigns)
 
-          unquote(do_block)
-        end
+        unquote(do_block)
       end
-
-    {opts, quoted}
+    end
   end
 
   @doc false
@@ -313,6 +391,7 @@ defmodule Phoenix.LiveView.Helpers do
     assigns = if inner, do: Map.put(assigns, :inner_block, inner), else: assigns
     id = assigns[:id]
 
+    # TODO: Deprecate stateless live component
     if is_nil(id) and
          (function_exported?(component, :handle_event, 3) or
             function_exported?(component, :preload, 1)) do
@@ -326,6 +405,31 @@ defmodule Phoenix.LiveView.Helpers do
   def __live_component__(%{kind: kind, module: module}, assigns)
       when is_list(assigns) or is_map(assigns) do
     raise "expected #{inspect(module)} to be a component, but it is a #{kind}"
+  end
+
+  @doc false
+  def __component__(func, assigns, inner)
+      when is_function(func, 1) and is_list(assigns) or is_map(assigns) do
+    assigns = Map.new(assigns)
+    assigns = if inner, do: Map.put(assigns, :inner_block, inner), else: assigns
+
+    func.(assigns)
+  end
+
+  def __component__(func, assigns, _) when is_list(assigns) or is_map(assigns) do
+    raise ArgumentError, """
+    component/3 expected an anonymous function with 1-arity, got: #{inspect(func)}
+
+    Please call component with a 1-arity function, for example:
+
+        <%= component &func/1 %>
+
+        def func(assigns) do
+          ~L\"""
+          Hello
+          \"""
+        end
+    """
   end
 
   @doc """

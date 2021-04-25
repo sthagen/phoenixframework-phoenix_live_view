@@ -26,13 +26,22 @@ defmodule Phoenix.LiveView.Socket do
 
   if Version.match?(System.version(), ">= 1.8.0") do
     @derive {Inspect,
-             only: [:id, :endpoint, :router, :view, :parent_pid, :root_pid, :assigns, :changed]}
+             only: [
+               :id,
+               :endpoint,
+               :router,
+               :view,
+               :parent_pid,
+               :root_pid,
+               :assigns,
+               :changed,
+               :transport_pid
+             ]}
   end
 
   defstruct id: nil,
             endpoint: nil,
             view: nil,
-            root_view: nil,
             parent_pid: nil,
             root_pid: nil,
             router: nil,
@@ -42,7 +51,7 @@ defmodule Phoenix.LiveView.Socket do
             fingerprints: Phoenix.LiveView.Diff.new_fingerprints(),
             redirected: nil,
             host_uri: nil,
-            connected?: false
+            transport_pid: nil
 
   @typedoc "Struct returned when `assigns` is not in the socket."
   @opaque assigns_not_in_socket :: Phoenix.LiveView.Socket.AssignsNotInSocket.t()
@@ -56,7 +65,6 @@ defmodule Phoenix.LiveView.Socket do
           id: binary(),
           endpoint: module(),
           view: module(),
-          root_view: module(),
           parent_pid: nil | pid(),
           root_pid: pid(),
           router: module(),
@@ -66,7 +74,7 @@ defmodule Phoenix.LiveView.Socket do
           fingerprints: fingerprints,
           redirected: nil | tuple(),
           host_uri: URI.t() | :not_mounted_at_router,
-          connected?: boolean()
+          transport_pid: pid() | nil
         }
 
   channel "lvu:*", Phoenix.LiveView.UploadChannel

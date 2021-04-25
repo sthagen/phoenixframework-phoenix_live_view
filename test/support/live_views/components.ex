@@ -1,3 +1,13 @@
+defmodule Phoenix.LiveViewTest.FunctionComponent do
+  import Phoenix.LiveView.Helpers
+
+  def render(assigns) do
+    ~L"""
+    COMPONENT:<%= @value %>
+    """
+  end
+end
+
 defmodule Phoenix.LiveViewTest.StatefulComponent do
   use Phoenix.LiveComponent
 
@@ -31,7 +41,7 @@ defmodule Phoenix.LiveViewTest.StatefulComponent do
     ~L"""
     <div id="<%= @id %>" phx-target="#<%= @id %>" phx-click="transform">
       <%= @name %> says hi
-      <%= if @dup_name, do: live_component @socket, __MODULE__, id: @dup_name, name: @dup_name %>
+      <%= if @dup_name, do: live_component __MODULE__, id: @dup_name, name: @dup_name %>
     </div>
     """
   end
@@ -75,7 +85,7 @@ defmodule Phoenix.LiveViewTest.WithComponentLive do
     ~L"""
     Redirect: <%= @redirect %>
     <%= for name <- @names do %>
-      <%= live_component @socket, Phoenix.LiveViewTest.StatefulComponent,
+      <%= live_component Phoenix.LiveViewTest.StatefulComponent,
             id: name, name: name, from: @from, disabled: name in @disabled  %>
     <% end %>
     """
