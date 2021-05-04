@@ -1254,7 +1254,8 @@ defmodule Phoenix.LiveViewTest do
   end
 
   @doc """
-  Follows the redirect from a `render_*` action.
+  Follows the redirect from a `render_*` action or an `{:error, redirect}`
+  tuple.
 
   Imagine you have a LiveView that redirects on a `render_click`
   event. You can make it sure it immediately redirects after the
@@ -1263,6 +1264,11 @@ defmodule Phoenix.LiveViewTest do
       live_view
       |> render_click("redirect")
       |> follow_redirect(conn)
+
+  Or in the case of an error tuple:
+
+      assert {:error, {:redirect, %{to: "/somewhere"}}} = result = live(conn, "my-path")
+      {:ok, view, html} = follow_redirect(result, conn)
 
   `follow_redirect/3` expects a connection as second argument.
   This is the connection that will be used to perform the underlying
@@ -1312,6 +1318,53 @@ defmodule Phoenix.LiveViewTest do
       {Phoenix.ConnTest.put_req_cookie(conn, @flash_cookie, flash), to}
     else
       {conn, to}
+    end
+  end
+
+  @doc """
+  Receives a `form_element` and asserts that `phx-trigger-action` has been
+  set to true, following up on that request.
+
+  Imagine you have a LiveView that sends an HTTP form submission. Say that it
+  sets the `phx-trigger-action` to true, as a response to a submit event.
+  You can follow the trigger action like this:
+
+      form = form(live_view, selector, %{"form" => "data"})
+
+      # First we submit the form. Optionally verify that phx-trigger-action
+      # is now part of the form.
+      assert render_submit(form) =~ ~r/phx-trigger-action/
+
+      # Now follow the request made by the form
+      conn = follow_trigger_action(form, conn)
+      assert conn.method == "POST"
+      assert conn.params == %{"form" => "data"}
+
+  """
+  defmacro follow_trigger_action(form, conn) do
+    quote bind_quoted: binding() do
+      {method, path, form_data} = Phoenix.LiveViewTest.__render_trigger_event__(form)
+      dispatch(conn, @endpoint, method, path, form_data)
+    end
+  end
+
+  def __render_trigger_event__(%Element{} = form) do
+    case render_tree(form) do
+      {"form", attrs, _child_nodes} ->
+        unless List.keymember?(attrs, "phx-trigger-action", 0) do
+          raise ArgumentError,
+                "could not follow trigger action because form #{inspect(form.selector)} " <>
+                  "does not have phx-trigger-action attribute, got: #{inspect(attrs)}"
+        end
+
+        {"action", path} = List.keyfind(attrs, "action", 0) || {"action", call(form, :url)}
+        {"method", method} = List.keyfind(attrs, "method", 0) || {"method", "get"}
+        {method, path, form.form_data || %{}}
+
+      {tag, _, _} ->
+        raise ArgumentError,
+              "could not follow trigger action because given element did not return a form, " <>
+                "got #{inspect(tag)} instead"
     end
   end
 
