@@ -154,6 +154,7 @@ class UploadEntry {
     this._isCancelled = false
     this._isDone = false
     this._progress = 0
+    this._lastProgressSent = -1
     this._onDone = function(){}
   }
 
@@ -161,15 +162,19 @@ class UploadEntry {
 
   progress(progress){
     this._progress = Math.floor(progress)
-    if(this._progress >= 100){
-      this._progress = 100
-      this._isDone = true
-      this.view.pushFileProgress(this.fileEl, this.ref, 100, () => {
-        LiveUploader.untrackFile(this.fileEl, this.file)
-        this._onDone()
-      })
-    } else {
-      this.view.pushFileProgress(this.fileEl, this.ref, this._progress)
+    if(this._progress > this._lastProgressSent){
+      if(this._progress >= 100){
+        this._progress = 100
+        this._lastProgressSent = 100
+        this._isDone = true
+        this.view.pushFileProgress(this.fileEl, this.ref, 100, () => {
+          LiveUploader.untrackFile(this.fileEl, this.file)
+          this._onDone()
+        })
+      } else {
+        this._lastProgressSent = this._progress
+        this.view.pushFileProgress(this.fileEl, this.ref, this._progress)
+      }
     }
   }
 
@@ -183,6 +188,7 @@ class UploadEntry {
 
   error(reason = "failed"){
     this.view.pushFileProgress(this.fileEl, this.ref, {error: reason})
+    LiveUploader.clearFiles(this.fileEl)
   }
 
   //private
@@ -286,6 +292,7 @@ class LiveUploader {
 
   static clearFiles(inputEl){
     inputEl.value = null
+    inputEl.removeAttribute(PHX_UPLOAD_REF)
     DOM.putPrivate(inputEl, "files", [])
   }
 
@@ -371,16 +378,21 @@ class EntryUploader {
     this.entry = entry
     this.offset = 0
     this.chunkSize = chunkSize
+    this.chunkTimer = null
     this.uploadChannel = liveSocket.channel(`lvu:${entry.ref}`, {token: entry.metadata()})
   }
 
+  error(reason){
+    clearTimeout(this.chunkTimer)
+    this.uploadChannel.leave()
+    this.entry.error(reason)
+  }
+
   upload(){
+    this.uploadChannel.onError(reason => this.error(reason))
     this.uploadChannel.join()
       .receive("ok", data => this.readNextChunk())
-      .receive("error", reason => {
-        this.uploadChannel.leave()
-        this.entry.error()
-      })
+      .receive("error", reason => this.error(reason))
   }
 
   isDone(){ return this.offset >= this.entry.file.size }
@@ -405,7 +417,7 @@ class EntryUploader {
       .receive("ok", () => {
         this.entry.progress((this.offset / this.entry.file.size) * 100)
         if(!this.isDone()){
-          setTimeout(() => this.readNextChunk(), this.liveSocket.getLatencySim() || 0)
+          this.chunkTimer = setTimeout(() => this.readNextChunk(), this.liveSocket.getLatencySim() || 0)
         }
       })
   }
@@ -700,6 +712,20 @@ export class Rendered {
  *         }
  *       }
  *     }
+ * @param {Object} [opts.sessionStorage] - An optional Storage compatible object
+ * Useful when LiveView won't have access to `sessionStorage`.  For example, This could
+ * happen if a site loads a cross-domain LiveView in an iframe.  Example usage:
+ *
+ *     class InMemoryStorage {
+ *       constructor() { this.storage = {} }
+ *       getItem(keyName) { return this.storage[keyName] }
+ *       removeItem(keyName) { delete this.storage[keyName] }
+ *       setItem(keyName, keyValue) { this.storage[keyName] = keyValue }
+ *     }
+ *
+ * @param {Object} [opts.localStorage] - An optional Storage compatible object
+ * Useful for when LiveView won't have access to `localStorage`.
+ * See `opts.sessionStorage` for examples.
 */
 export class LiveSocket {
   constructor(url, phxSocket, opts = {}){
@@ -732,9 +758,11 @@ export class LiveSocket {
     this.hooks = opts.hooks || {}
     this.uploaders = opts.uploaders || {}
     this.loaderTimeout = opts.loaderTimeout || LOADER_TIMEOUT
+    this.localStorage = opts.localStorage || window.localStorage
+    this.sessionStorage = opts.sessionStorage || window.sessionStorage
     this.boundTopLevelEvents = false
     this.domCallbacks = Object.assign({onNodeAdded: closure(), onBeforeElUpdated: closure()}, opts.dom || {})
-    window.addEventListener("unload", e => {
+    window.addEventListener("pagehide", e => {
       this.unloaded = true
     })
     this.socket.onOpen(() => {
@@ -747,28 +775,28 @@ export class LiveSocket {
 
   // public
 
-  isProfileEnabled(){ return sessionStorage.getItem(PHX_LV_PROFILE) === "true" }
+  isProfileEnabled(){ return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true" }
 
-  isDebugEnabled(){ return sessionStorage.getItem(PHX_LV_DEBUG) === "true" }
+  isDebugEnabled(){ return this.sessionStorage.getItem(PHX_LV_DEBUG) === "true" }
 
-  enableDebug(){ sessionStorage.setItem(PHX_LV_DEBUG, "true") }
+  enableDebug(){ this.sessionStorage.setItem(PHX_LV_DEBUG, "true") }
 
-  enableProfiling(){ sessionStorage.setItem(PHX_LV_PROFILE, "true") }
+  enableProfiling(){ this.sessionStorage.setItem(PHX_LV_PROFILE, "true") }
 
-  disableDebug(){ sessionStorage.removeItem(PHX_LV_DEBUG) }
+  disableDebug(){ this.sessionStorage.removeItem(PHX_LV_DEBUG) }
 
-  disableProfiling(){ sessionStorage.removeItem(PHX_LV_PROFILE) }
+  disableProfiling(){ this.sessionStorage.removeItem(PHX_LV_PROFILE) }
 
   enableLatencySim(upperBoundMs){
     this.enableDebug()
     console.log("latency simulator enabled for the duration of this browser session. Call disableLatencySim() to disable")
-    sessionStorage.setItem(PHX_LV_LATENCY_SIM, upperBoundMs)
+    this.sessionStorage.setItem(PHX_LV_LATENCY_SIM, upperBoundMs)
   }
 
-  disableLatencySim(){ sessionStorage.removeItem(PHX_LV_LATENCY_SIM) }
+  disableLatencySim(){ this.sessionStorage.removeItem(PHX_LV_LATENCY_SIM) }
 
   getLatencySim(){
-    let str = sessionStorage.getItem(PHX_LV_LATENCY_SIM)
+    let str = this.sessionStorage.getItem(PHX_LV_LATENCY_SIM)
     return str ? parseInt(str) : null
   }
 
@@ -857,7 +885,7 @@ export class LiveSocket {
     this.disconnect()
     let [minMs, maxMs] = RELOAD_JITTER
     let afterMs = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
-    let tries = Browser.updateLocal(view.name(), CONSECUTIVE_RELOADS, 0, count => count + 1)
+    let tries = Browser.updateLocal(this.localStorage, view.name(), CONSECUTIVE_RELOADS, 0, count => count + 1)
     log ? log() : this.log(view, "join", () => [`encountered ${tries} consecutive reloads`])
     if(tries > MAX_RELOADS){
       this.log(view, "join", () => [`exceeded ${MAX_RELOADS} consecutive reloads. Entering failsafe mode`])
@@ -1019,10 +1047,11 @@ export class LiveSocket {
     document.body.addEventListener("click", function(){}) // ensure all click events bubble for mobile Safari
     window.addEventListener("pageshow", e => {
       if(e.persisted){ // reload page if being restored from back/forward cache
+        this.getSocket().disconnect()
         this.withPageLoading({to: window.location.href, kind: "redirect"})
         window.location.reload()
       }
-    })
+    }, true)
     this.bindClicks()
     this.bindNav()
     this.bindForms()
@@ -1295,20 +1324,20 @@ export class LiveSocket {
 export let Browser = {
   canPushState(){ return (typeof(history.pushState) !== "undefined") },
 
-  dropLocal(namespace, subkey){
-    return window.localStorage.removeItem(this.localKey(namespace, subkey))
+  dropLocal(localStorage, namespace, subkey){
+    return localStorage.removeItem(this.localKey(namespace, subkey))
   },
 
-  updateLocal(namespace, subkey, initial, func){
-    let current = this.getLocal(namespace, subkey)
+  updateLocal(localStorage, namespace, subkey, initial, func){
+    let current = this.getLocal(localStorage, namespace, subkey)
     let key = this.localKey(namespace, subkey)
     let newVal = current === null ? initial : func(current)
-    window.localStorage.setItem(key, JSON.stringify(newVal))
+    localStorage.setItem(key, JSON.stringify(newVal))
     return newVal
   },
 
-  getLocal(namespace, subkey){
-    return JSON.parse(window.localStorage.getItem(this.localKey(namespace, subkey)))
+  getLocal(localStorage, namespace, subkey){
+    return JSON.parse(localStorage.getItem(this.localKey(namespace, subkey)))
   },
 
   fetchPage(href, callback){
@@ -2116,7 +2145,7 @@ export class View {
   withinTargets(phxTarget, callback){
     if(phxTarget instanceof HTMLElement) {
       return this.liveSocket.owner(phxTarget, view => callback(view, phxTarget))
-    } 
+    }
 
     if(/^(0|[1-9]\d*)$/.test(phxTarget)){
       let targets = DOM.findComponentNodeList(this.el, phxTarget)
@@ -2147,7 +2176,7 @@ export class View {
     this.joinPending = true
     this.flash = null
 
-    Browser.dropLocal(this.name(), CONSECUTIVE_RELOADS)
+    Browser.dropLocal(this.liveSocket.localStorage, this.name(), CONSECUTIVE_RELOADS)
     this.applyDiff("mount", rendered, ({diff, events}) => {
       this.rendered = new Rendered(this.id, diff)
       let html = this.renderContainer(null, "join")
@@ -2496,7 +2525,9 @@ export class View {
 
   onClose(reason){
     if(this.isDestroyed()){ return }
-    if(this.isJoinPending() || (this.liveSocket.hasPendingLink() && reason !== "leave")){
+    if((this.isJoinPending() && document.visibilityState !== "hidden") ||
+       (this.liveSocket.hasPendingLink() && reason !== "leave")){
+
       return this.liveSocket.reloadWithJitter(this)
     }
     this.destroyAllChildren()
@@ -2521,6 +2552,8 @@ export class View {
   }
 
   pushWithReply(refGenerator, event, payload, onReply = function(){}){
+    if(!this.isConnected()){ return }
+
     let [ref, [el]] = refGenerator ? refGenerator() : [null, []]
     let onLoadingDone = function(){}
     if(el && (el.getAttribute(this.binding(PHX_PAGE_LOADING)) !== null)){
