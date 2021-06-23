@@ -351,11 +351,16 @@ defmodule Phoenix.LiveView.HTMLEngine do
   end
 
   defp handle_component_attrs(attrs) do
-    {r, d} = build_component_attrs(attrs)
+    entries =
+      case build_component_attrs(attrs) do
+        {[], []} -> [{:%{}, [], []}]
+        {r, []} -> r
+        {r, d} -> r ++ [{:%{}, [], d}]
+      end
 
-    quote do
-      Enum.reduce([unquote_splicing(r ++ [d])], %{}, &Map.merge(&2, Map.new(&1)))
-    end
+    Enum.reduce(entries, fn expr, acc ->
+      quote do: Map.merge(unquote(acc), unquote(expr))
+    end)
   end
 
   defp build_component_attrs(attrs) do
@@ -368,6 +373,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp build_component_attrs([{:root, {:expr, value, %{line: line, column: col}}} | attrs], {r, d}) do
     quoted_value = Code.string_to_quoted!(value, line: line, column: col)
+    quoted_value = quote do: Map.new(unquote(quoted_value))
     build_component_attrs(attrs, {[quoted_value | r], d})
   end
 
@@ -376,11 +382,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
     build_component_attrs(attrs, {r, [{String.to_atom(name), quoted_value} | d]})
   end
 
-  defp build_component_attrs([{name, {:string, value, %{delimiter: ?"}}} | attrs], {r, d}) do
-    build_component_attrs(attrs, {r, [{String.to_atom(name), value} | d]})
-  end
-
-  defp build_component_attrs([{name, {:string, value, %{delimiter: ?'}}} | attrs], {r, d}) do
+  defp build_component_attrs([{name, {:string, value, _}} | attrs], {r, d}) do
     build_component_attrs(attrs, {r, [{String.to_atom(name), value} | d]})
   end
 
@@ -391,9 +393,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp decompose_remote_component_tag!(tag_name) do
     case String.split(tag_name, ".") |> Enum.reverse() do
       [<<first, _::binary>> = fun_name | rest] when first in ?a..?z ->
-        mod = rest |> Enum.reverse() |> Module.concat()
+        aliases = rest |> Enum.reverse() |> Enum.map(&String.to_atom/1)
         fun = String.to_atom(fun_name)
-        {mod, fun}
+        {{:__aliases__, [], aliases}, fun}
 
       _ ->
         # TODO: Raise a proper error at the line of the component definition
