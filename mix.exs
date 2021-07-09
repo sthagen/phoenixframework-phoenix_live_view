@@ -38,9 +38,11 @@ defmodule Phoenix.LiveView.MixProject do
 
   defp deps do
     [
+      # TODO bump before release (or ~> 1.6.0)
       {:phoenix, "~> 1.5.9"},
+      # TODO bump before release
       {:phoenix_html, github: "phoenixframework/phoenix_html", override: true},
-      {:telemetry, "~> 0.4.2 or ~> 0.5"},
+      {:telemetry, "~> 0.4.2 or ~> 1.0"},
       {:jason, "~> 1.0", optional: true},
       {:ex_doc, "~> 0.22", only: :docs},
       {:floki, "~> 0.30.0", only: :test},

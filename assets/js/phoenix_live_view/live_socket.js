@@ -239,7 +239,7 @@ export default class LiveSocket {
     if(!latency){
       if(opts.timeout){
         return push().receive("timeout", () => {
-          if(view.joinCount === oldJoinCount){
+          if(view.joinCount === oldJoinCount && !view.isDestroyed()){
             this.reloadWithJitter(view, () => {
               this.log(view, "timeout", () => ["received timeout while communicating with server. Falling back to hard refresh for recovery"])
             })
@@ -333,7 +333,7 @@ export default class LiveSocket {
 
   isPhxView(el){ return el.getAttribute && el.getAttribute(PHX_SESSION) !== null }
 
-  newRootView(el, href, flash){
+  newRootView(el, flash){
     let view = new View(el, this, null, flash)
     this.roots[view.id] = view
     return view
@@ -424,8 +424,8 @@ export default class LiveSocket {
         window.location.reload()
       }
     }, true)
-    this.bindClicks()
     this.bindNav()
+    this.bindClicks()
     this.bindForms()
     this.bind({keyup: "keyup", keydown: "keydown"}, (e, type, view, target, targetCtx, phxEvent, _phxTarget) => {
       let matchKey = target.getAttribute(this.binding(PHX_KEY))

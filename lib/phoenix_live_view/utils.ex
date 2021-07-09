@@ -3,7 +3,7 @@ defmodule Phoenix.LiveView.Utils do
   # but also Static, and LiveViewTest.
   @moduledoc false
 
-  alias Phoenix.LiveView.{Rendered, Socket}
+  alias Phoenix.LiveView.{Rendered, Socket, Lifecycle}
 
   # All available mount options
   @mount_opts [:temporary_assigns, :layout]
@@ -66,6 +66,12 @@ defmodule Phoenix.LiveView.Utils do
   """
   def changed?(%{__changed__: nil}, _assign), do: true
   def changed?(%{__changed__: changed}, assign), do: Map.has_key?(changed, assign)
+
+  @doc """
+  Returns the CID of the given socket.
+  """
+  def cid(%Socket{assigns: %{myself: %Phoenix.LiveComponent.CID{} = cid}}), do: cid
+  def cid(%Socket{}), do: nil
 
   @doc """
   Configures the socket for use.
@@ -282,6 +288,8 @@ defmodule Phoenix.LiveView.Utils do
   Calls the `c:Phoenix.LiveView.mount/3` callback, otherwise returns the socket as is.
   """
   def maybe_call_live_view_mount!(%Socket{} = socket, view, params, session) do
+    {_, %Socket{} = socket} = Lifecycle.mount(params, session, socket)
+
     if function_exported?(view, :mount, 3) do
       :telemetry.span(
         [:phoenix, :live_view, :mount],
@@ -348,16 +356,22 @@ defmodule Phoenix.LiveView.Utils do
       [:phoenix, :live_view, :handle_params],
       %{socket: socket, params: params, uri: uri},
       fn ->
-        case view.handle_params(params, uri, socket) do
-          {:noreply, %Socket{} = socket} ->
+        case Lifecycle.handle_params(params, uri, socket) do
+          {:halt, %Socket{} = socket} ->
             {{:noreply, socket}, %{socket: socket, params: params, uri: uri}}
 
-          other ->
-            raise ArgumentError, """
-            invalid result returned from #{inspect(view)}.handle_params/3.
+          {:cont, %Socket{} = socket} ->
+            case view.handle_params(params, uri, socket) do
+              {:noreply, %Socket{} = socket} ->
+                {{:noreply, socket}, %{socket: socket, params: params, uri: uri}}
 
-            Expected {:noreply, socket}, got: #{inspect(other)}
-            """
+              other ->
+                raise ArgumentError, """
+                invalid result returned from #{inspect(view)}.handle_params/3.
+
+                Expected {:noreply, socket}, got: #{inspect(other)}
+                """
+            end
         end
       end
     )

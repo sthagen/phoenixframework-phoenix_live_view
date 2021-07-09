@@ -4,7 +4,7 @@ defmodule Phoenix.LiveView.Channel do
 
   require Logger
 
-  alias Phoenix.LiveView.{Socket, Utils, Diff, Upload, UploadConfig, Route, Session}
+  alias Phoenix.LiveView.{Socket, Utils, Diff, Upload, UploadConfig, Route, Session, Lifecycle}
   alias Phoenix.Socket.Message
 
   @prefix :phoenix
@@ -93,7 +93,7 @@ defmodule Phoenix.LiveView.Channel do
 
       :error ->
         msg
-        |> socket.view.handle_info(socket)
+        |> view_handle_info(socket)
         |> handle_result({:handle_info, 2, nil}, state)
     end
   end
@@ -247,7 +247,7 @@ defmodule Phoenix.LiveView.Channel do
 
   def handle_info(msg, %{socket: socket} = state) do
     msg
-    |> socket.view.handle_info(socket)
+    |> view_handle_info(socket)
     |> handle_result({:handle_info, 2, nil}, state)
   end
 
@@ -269,7 +269,7 @@ defmodule Phoenix.LiveView.Channel do
 
   def handle_call({@prefix, :child_mount, _child_pid, assign_new}, _from, state) do
     assigns = Map.take(state.socket.assigns, assign_new)
-    {:reply, assigns, state}
+    {:reply, {:ok, assigns}, state}
   end
 
   def handle_call({@prefix, :register_entry_upload, info}, from, state) do
@@ -341,18 +341,31 @@ defmodule Phoenix.LiveView.Channel do
       [:phoenix, :live_view, :handle_event],
       %{socket: socket, event: event, params: val},
       fn ->
-        case socket.view.handle_event(event, val, socket) do
-          {:noreply, %Socket{} = socket} ->
+        case Lifecycle.handle_event(event, val, socket) do
+          {:halt, %Socket{} = socket} ->
             {{:noreply, socket}, %{socket: socket, event: event, params: val}}
 
-          {:reply, reply, %Socket{} = socket} ->
-            {{:reply, reply, socket}, %{socket: socket, event: event, params: val}}
+          {:cont, %Socket{} = socket} ->
+            case socket.view.handle_event(event, val, socket) do
+              {:noreply, %Socket{} = socket} ->
+                {{:noreply, socket}, %{socket: socket, event: event, params: val}}
 
-          other ->
-            raise_bad_callback_response!(other, socket.view, :handle_event, 3)
+              {:reply, reply, %Socket{} = socket} ->
+                {{:reply, reply, socket}, %{socket: socket, event: event, params: val}}
+
+              other ->
+                raise_bad_callback_response!(other, socket.view, :handle_event, 3)
+            end
         end
       end
     )
+  end
+
+  defp view_handle_info(msg, %{view: view} = socket) do
+    case Lifecycle.handle_info(msg, socket) do
+      {:halt, %Socket{} = socket} -> {:noreply, socket}
+      {:cont, %Socket{} = socket} -> view.handle_info(msg, socket)
+    end
   end
 
   defp maybe_call_mount_handle_params(%{socket: socket} = state, router, url, params) do
@@ -846,7 +859,10 @@ defmodule Phoenix.LiveView.Channel do
     # ever is a LiveView connection, the view won't be loaded and
     # the mount/handle_params callbacks won't be invoked as they
     # are optional, leading to errors.
-    view.__live__()
+    config = view.__live__()
+
+    live_session_on_mount = load_live_session_on_mount(route)
+    lifecycle = lifecycle(config, live_session_on_mount)
 
     %Phoenix.Socket{
       endpoint: endpoint,
@@ -889,20 +905,20 @@ defmodule Phoenix.LiveView.Channel do
 
     merged_session = Map.merge(socket_session, verified_user_session)
 
-    socket =
-      Utils.configure_socket(
-        socket,
-        mount_private(parent, root_view, assign_new, connect_params, connect_info),
-        action,
-        flash,
-        host_uri
-      )
+    case mount_private(parent, root_view, assign_new, connect_params, connect_info, lifecycle) do
+      {:ok, mount_priv} ->
+        socket = Utils.configure_socket(socket, mount_priv, action, flash, host_uri)
 
-    socket
-    |> Utils.maybe_call_live_view_mount!(view, params, merged_session)
-    |> build_state(phx_socket)
-    |> maybe_call_mount_handle_params(router, url, params)
-    |> reply_mount(from, verified, route)
+        socket
+        |> Utils.maybe_call_live_view_mount!(view, params, merged_session)
+        |> build_state(phx_socket)
+        |> maybe_call_mount_handle_params(router, url, params)
+        |> reply_mount(from, verified, route)
+
+      {:error, :noproc} ->
+        GenServer.reply(from, {:error, %{reason: "stale"}})
+        {:stop, :shutdown, :no_state}
+    end
   end
 
   defp load_csrf_token(endpoint, socket_session) do
@@ -913,28 +929,45 @@ defmodule Phoenix.LiveView.Channel do
     end
   end
 
-  defp mount_private(nil, root_view, assign_new, connect_params, connect_info) do
-    %{
-      connect_params: connect_params,
-      connect_info: connect_info,
-      assign_new: {%{}, assign_new},
-      root_view: root_view,
-      __changed__: %{}
-    }
+  defp load_live_session_on_mount(%Route{live_session: %{extra: %{on_mount: hooks}}}), do: hooks
+  defp load_live_session_on_mount(_), do: []
+
+  defp lifecycle(%{lifecycle: lifecycle}, []), do: lifecycle
+
+  defp lifecycle(%{lifecycle: lifecycle}, on_mount) do
+    %{lifecycle | mount: on_mount ++ lifecycle.mount}
   end
 
-  defp mount_private(parent, root_view, assign_new, connect_params, connect_info) do
-    parent_assigns = sync_with_parent(parent, assign_new)
+  defp mount_private(nil, root_view, assign_new, connect_params, connect_info, lifecycle) do
+    {:ok,
+     %{
+       connect_params: connect_params,
+       connect_info: connect_info,
+       assign_new: {%{}, assign_new},
+       lifecycle: lifecycle,
+       root_view: root_view,
+       __changed__: %{}
+     }}
+  end
 
-    # Child live views always ignore the layout on `:use`.
-    %{
-      connect_params: connect_params,
-      connect_info: connect_info,
-      assign_new: {parent_assigns, assign_new},
-      phoenix_live_layout: false,
-      root_view: root_view,
-      __changed__: %{}
-    }
+  defp mount_private(parent, root_view, assign_new, connect_params, connect_info, lifecycle) do
+    case sync_with_parent(parent, assign_new) do
+      {:ok, parent_assigns} ->
+        # Child live views always ignore the layout on `:use`.
+        {:ok,
+         %{
+           connect_params: connect_params,
+           connect_info: connect_info,
+           assign_new: {parent_assigns, assign_new},
+           phoenix_live_layout: false,
+           lifecycle: lifecycle,
+           root_view: root_view,
+           __changed__: %{}
+         }}
+
+      {:error, :noproc} ->
+        {:error, :noproc}
+    end
   end
 
   defp sync_with_parent(parent, assign_new) do
@@ -943,7 +976,7 @@ defmodule Phoenix.LiveView.Channel do
     try do
       GenServer.call(parent, {@prefix, :child_mount, self(), assign_new})
     catch
-      :exit, {:noproc, _} -> :ok
+      :exit, {:noproc, _} -> {:error, :noproc}
     end
   end
 

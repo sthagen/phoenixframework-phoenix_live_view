@@ -25,6 +25,19 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
     end
   end
 
+  describe "doctype" do
+    test "generated as text" do
+      assert tokenize("<!doctype html>") == [{:text, "<!doctype html>"}]
+    end
+
+    test "multiple lines" do
+      assert tokenize("<!DOCTYPE\nhtml\n>  <br />") ==  [
+              {:text, "<!DOCTYPE\nhtml\n>  "},
+              {:tag_open, "br", [], %{column: 4, line: 3, self_close: true}}
+            ]
+    end
+  end
+
   describe "comment" do
     test "generated as text" do
       assert tokenize("Begin<!-- comment -->End") == [{:text, "Begin<!-- comment -->End"}]
@@ -42,7 +55,7 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
       assert [
                {:tag_open, "p", [], %{line: 1, column: 1}},
                {:text, "\n<!--\n<div>\n-->\n"},
-               {:tag_close, "p"},
+               {:tag_close, "p", %{line: 5, column: 1}},
                {:tag_open, "br", [], %{line: 5, column: 5}}
              ] = tokenize(code)
     end
@@ -462,9 +475,9 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
   end
 
   describe "closing tag" do
-    test "represented as {:tag_close, name}" do
+    test "represented as {:tag_close, name, meta}" do
       tokens = tokenize("</div>")
-      assert [{:tag_close, "div"}] = tokens
+      assert [{:tag_close, "div", %{}}] = tokens
     end
 
     test "compute line and columns" do
@@ -477,7 +490,7 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
       assert [
                {:tag_open, "div", [], _meta},
                {:text, _},
-               {:tag_close, "div"},
+               {:tag_close, "div", %{line: 2, column: 1}},
                {:tag_open, "br", [], %{line: 2, column: 7}}
              ] = tokens
     end
@@ -506,7 +519,7 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
              {:text, "text before\n"},
              {:tag_open, "div", [], %{}},
              {:text, "\n  text\n"},
-             {:tag_close, "div"},
+             {:tag_close, "div", %{line: 4, column: 1}},
              {:text, "\ntext after\n"}
            ] = tokens
   end
