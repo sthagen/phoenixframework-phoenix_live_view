@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView.MixProject do
   use Mix.Project
 
-  @version "0.16.0-dev"
+  @version "0.16.0"
 
   def project do
     [
@@ -39,10 +39,8 @@ defmodule Phoenix.LiveView.MixProject do
 
   defp deps do
     [
-      # TODO bump before release (or ~> 1.6.0)
-      {:phoenix, "~> 1.5.9"},
-      # TODO bump before release
-      {:phoenix_html, github: "phoenixframework/phoenix_html", override: true},
+      {:phoenix, "~> 1.5.9 or ~> 1.6.0"},
+      {:phoenix_html, "~> 3.0.0"},
       {:esbuild, "~> 0.2", only: :dev},
       {:telemetry, "~> 0.4.2 or ~> 1.0"},
       {:jason, "~> 1.0", optional: true},
@@ -60,7 +58,8 @@ defmodule Phoenix.LiveView.MixProject do
       extra_section: "GUIDES",
       extras: extras(),
       groups_for_extras: groups_for_extras(),
-      groups_for_modules: groups_for_modules()
+      groups_for_modules: groups_for_modules(),
+      nest_modules_by_prefix: [Phoenix.LiveViewTest]
     ]
   end
 
@@ -92,15 +91,28 @@ defmodule Phoenix.LiveView.MixProject do
   end
 
   defp groups_for_modules do
+    # Ungrouped Modules:
+    #
+    # Phoenix.LiveView
+    # Phoenix.LiveView.Controller
+    # Phoenix.LiveView.Helpers
+    # Phoenix.LiveView.Router
+    # Phoenix.LiveView.Socket
+
     [
-      "Upload structures": [
-        Phoenix.LiveView.UploadConfig,
-        Phoenix.LiveView.UploadEntry
+      "Components": [
+        Phoenix.Component,
+        Phoenix.LiveComponent
       ],
-      "Testing structures": [
+      "Testing": [
+        Phoenix.LiveViewTest,
         Phoenix.LiveViewTest.Element,
         Phoenix.LiveViewTest.Upload,
         Phoenix.LiveViewTest.View
+      ],
+      "Upload structures": [
+        Phoenix.LiveView.UploadConfig,
+        Phoenix.LiveView.UploadEntry
       ],
       "Live EEx Engine": [
         Phoenix.LiveComponent.CID,

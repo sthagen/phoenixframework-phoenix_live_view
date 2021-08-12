@@ -251,7 +251,7 @@ defmodule Phoenix.LiveView do
       end
 
   In all cases, each assign in the template will be accessible as `@assign`.
-  You can learn more about [assigns and LiveEEx templates in their own guide](assigns-eex.md).
+  You can learn more about [assigns and HEEx templates in their own guide](assigns-eex.md).
 
   ## Bindings
 
@@ -291,7 +291,7 @@ defmodule Phoenix.LiveView do
         ~H"\""
         <div title="My div" class={@class}>
           <p>Hello <%= @name %></p>
-          <MyApp.Weather.render city="Kraków"/>
+          <MyApp.Weather.city name="Kraków"/>
         </div>
         "\""
       end

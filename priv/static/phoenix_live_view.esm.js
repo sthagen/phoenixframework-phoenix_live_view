@@ -2433,13 +2433,14 @@ var View = class {
   }
   undoRefs(ref) {
     dom_default.all(this.el, `[${PHX_REF}="${ref}"]`, (el) => {
+      let disabledVal = el.getAttribute(PHX_DISABLED);
       el.removeAttribute(PHX_REF);
       if (el.getAttribute(PHX_READONLY) !== null) {
         el.readOnly = false;
         el.removeAttribute(PHX_READONLY);
       }
-      if (el.getAttribute(PHX_DISABLED) !== null) {
-        el.disabled = false;
+      if (disabledVal !== null) {
+        el.disabled = disabledVal === "true" ? true : false;
         el.removeAttribute(PHX_DISABLED);
       }
       PHX_EVENT_CLASSES.forEach((className) => dom_default.removeClass(el, className));
@@ -2993,14 +2994,14 @@ var LiveSocket = class {
   }
   replaceMain(href, flash, callback = null, linkRef = this.setPendingLink(href)) {
     let oldMainEl = this.main.el;
-    let newMainEl = dom_default.cloneNode(oldMainEl);
+    let newMainEl = dom_default.cloneNode(oldMainEl, "");
     this.main.showLoader(this.loaderTimeout);
     this.main.destroy();
-    oldMainEl.replaceWith(newMainEl);
     this.main = this.newRootView(newMainEl, flash);
     this.main.setRedirect(href);
     this.main.join((joinCount) => {
       if (joinCount === 1 && this.commitPendingLink(linkRef)) {
+        oldMainEl.replaceWith(newMainEl);
         callback && callback();
       }
     });
