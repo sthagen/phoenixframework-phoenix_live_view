@@ -639,7 +639,7 @@ defmodule Phoenix.LiveView.Helpers do
 
   ### HEEx extension: Defining attributes
 
-  Since `HEEx` must parse and validating the HTML structure, code interpolation using
+  Since `HEEx` must parse and validate the HTML structure, code interpolation using
   `<%= ... %>` and `<% ... %>` are restricted to the body (inner content) of the
   HTML/component nodes and it cannot be applied within tags.
 
@@ -683,7 +683,7 @@ defmodule Phoenix.LiveView.Helpers do
   where the component could be defined as follows:
 
       defmodule MyApp.Weather do
-        import Phoenix.LiveView.Helpers
+        use Phoenix.Component
 
         def city(assigns) do
           ~H"\""
@@ -699,15 +699,8 @@ defmodule Phoenix.LiveView.Helpers do
       end
 
   It is typically best to group related functions into a single module, as
-  opposed to having many modules with a single `render/1` function.
-
-  Function components can also receive their inner content as
-  the `@inner_block` assign to be rendered with `render_block/2`:
-
-      <MyApp.Weather.city name="Kraków">
-        Some content to be assigned to @inner_block
-      </MyApp.Weather.city>
-
+  opposed to having many modules with a single `render/1` function. You can
+  learn more about components in `Phoenix.Component`.
   """
   defmacro sigil_H({:<<>>, meta, [expr]}, []) do
     options = [
