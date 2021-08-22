@@ -128,7 +128,7 @@ LiveView 0.16 removes the `:layout` and `:container` options from
 `Phoenix.LiveView.Routing.live/4` in favor of the `:root_layout`
 and `:container` options on `Phoenix.Router.live_session/3`.
 
-For instance, if you have the following in LiveView 0.15 and prior: 
+For instance, if you have the following in LiveView 0.15 and prior:
 
 ```elixir
 live "/path", MyAppWeb.PageLive, layout: {MyAppWeb.LayoutView, "custom_layout.html"}
@@ -140,6 +140,20 @@ Change it to:
 live_session :session_name, root_layout: {MyAppWeb.LayoutView, "custom_layout.html"} do
   live "/path", MyAppWeb.PageLive
 end
+```
+
+On the client, the `phoenix_live_view` package no longer provides a default export for `LiveSocket`.
+
+If you have the following in your JavaScript entrypoint (typically located at `assets/js/app.js`):
+
+```js
+import LiveSocket from "phoenix_live_view"
+```
+
+Change it to:
+
+```js
+import { LiveSocket } from "phoenix_live_view"
 ```
 
 ### Enhancements
