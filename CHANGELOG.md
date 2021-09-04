@@ -1,9 +1,29 @@
 # Changelog
 
+## 0.16.3 (2021-09-03)
+
+### Bug fixes
+  - Fix `on_mount` hooks calling view mount before redirecting when the hook issues a halt redirect.
+
+## 0.16.2 (2021-09-03)
+
+### Enhancements
+  - Improve error messages on tokenization
+  - Improve error message if inner_block is missing
+
+### Bug fixes
+  - Fix phx-change form recovery event being sent to wrong component on reconnect when component order changes
+
 ## 0.16.1 (2021-08-26)
 
 ### Enhancements
   - Relax `phoenix_html` dependency requirement
+  - Allow testing functional components by passing a function reference
+    to `Phoenix.LiveViewTest.render_component/3`
+
+### Bug fixes
+  - Do not generate CSRF tokens for non-POST forms
+  - Do not add compile-time dependencies on on_mount declarations
 
 ## 0.16.0 (2021-08-10)
 
