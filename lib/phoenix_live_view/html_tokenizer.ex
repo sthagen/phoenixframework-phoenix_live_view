@@ -4,7 +4,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   @name_stop_chars @space_chars ++ '>/=\r\n'
 
   defmodule ParseError do
-    defexception [:file, :line, :column, :message]
+    defexception [:file, :line, :column, :description]
 
     @impl true
     def message(exception) do
@@ -13,7 +13,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         |> Path.relative_to_cwd()
         |> format_file_line_column(exception.line, exception.column)
 
-      "#{location} #{exception.message}"
+      "#{location} #{exception.description}"
     end
 
     # Use Exception.format_file_line_column/4 instead when support
@@ -59,7 +59,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_text(new_rest, new_live, new_column, new_buffer, acc, state)
 
       {:error, message} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
@@ -117,7 +117,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   defp handle_comment(<<>>, line, column, _buffer, state) do
     message = "expected closing `-->` for comment"
-    raise ParseError, file: state.file, line: line, column: column, message: message
+    raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
   ## handle_tag_open
@@ -134,7 +134,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_maybe_tag_open_end(rest, line, new_column, acc, state)
 
       {:error, message} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
@@ -152,7 +152,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_maybe_tag_open_end(rest, line, new_column, acc, state)
 
       {:error, message} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
@@ -162,18 +162,29 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   defp handle_tag_close_end(_text, line, column, _acc, state) do
     message = "expected closing `>`"
-    raise ParseError, file: state.file, line: line, column: column, message: message
+    raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
   ## handle_tag_name
 
-  defp handle_tag_name(<<c::utf8, _rest::binary>>, _column, _buffer = [])
+  defp handle_tag_name(<<c::utf8, _rest::binary>> = text, column, buffer)
        when c in @name_stop_chars do
+    done_tag_name(text, column, buffer)
+  end
+
+  defp handle_tag_name(<<c::utf8, rest::binary>>, column, buffer) do
+    handle_tag_name(rest, column + 1, [<<c::utf8>> | buffer])
+  end
+
+  defp handle_tag_name(<<>>, column, buffer) do
+    done_tag_name(<<>>, column, buffer)
+  end
+
+  defp done_tag_name(_text, _column, []) do
     {:error, "expected tag name"}
   end
 
-  defp handle_tag_name(<<c::utf8, _rest::binary>> = text, column, buffer)
-       when c in @name_stop_chars do
+  defp done_tag_name(text, column, buffer) do
     tag_name = buffer_to_string(buffer)
 
     case tag_name do
@@ -188,10 +199,6 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
       _ ->
         {:ok, tag_name, column, text}
     end
-  end
-
-  defp handle_tag_name(<<c::utf8, rest::binary>>, column, buffer) do
-    handle_tag_name(rest, column + 1, [<<c::utf8>> | buffer])
   end
 
   ## handle_maybe_tag_open_end
@@ -227,8 +234,9 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
     message = """
     expected closing `>` or `/>`
 
-    This may happen if there is an EEx interpolation inside a tag,
-    which is not supported. Instead of
+    Make sure the tag is properly closed. This may also happen if
+    there is an EEx interpolation inside a tag, which is not supported.
+    Instead of
 
         <a href="<%= @url %>">Text</a>
 
@@ -238,7 +246,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
     """
 
-    raise ParseError, file: state.file, line: line, column: column, message: message
+    raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
   defp handle_maybe_tag_open_end(text, line, column, acc, state) do
@@ -254,7 +262,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_maybe_attr_value(rest, line, new_column, acc, state)
 
       {:error, message} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
@@ -267,7 +275,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_maybe_tag_open_end(rest, new_line, new_column, acc, state)
 
       {:error, message, line, column} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
@@ -339,7 +347,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   defp handle_attr_value_begin(_text, line, column, _acc, state) do
     message = "expected attribute value or expression after `=`"
-    raise ParseError, file: state.file, line: line, column: column, message: message
+    raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
   ## handle_attr_value_quote
@@ -368,8 +376,9 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
     message = """
     expected closing `#{<<delim>>}` for attribute value
 
-    This may happen if there is an EEx interpolation inside a tag,
-    which is not supported. Instead of
+    Make sure the attribute is properly closed. This may also happen if
+    there is an EEx interpolation inside a tag, which is not supported.
+    Instead of
 
         <div <%= @some_attributes %>>
         </div>
@@ -382,7 +391,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
     Where @some_attributes must be a keyword list or a map.
     """
 
-    raise ParseError, file: state.file, line: line, column: column, message: message
+    raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
   ## handle_attr_value_as_expr
@@ -394,7 +403,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         handle_maybe_tag_open_end(rest, new_line, new_column, acc, state)
 
       {:error, message, line, column} ->
-        raise ParseError, file: state.file, line: line, column: column, message: message
+        raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
 
