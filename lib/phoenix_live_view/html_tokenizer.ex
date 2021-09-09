@@ -185,20 +185,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp done_tag_name(text, column, buffer) do
-    tag_name = buffer_to_string(buffer)
-
-    case tag_name do
-      <<first::utf8, rest::binary>> when first in ?a..?z ->
-        if downcase?(rest) do
-          {:ok, tag_name, column, text}
-        else
-          message = "expected tag name containing only lowercase chars, got: #{tag_name}"
-          {:warn, tag_name, column, text, message}
-        end
-
-      _ ->
-        {:ok, tag_name, column, text}
-    end
+    {:ok, buffer_to_string(buffer), column, text}
   end
 
   ## handle_maybe_tag_open_end
@@ -346,7 +333,10 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_attr_value_begin(_text, line, column, _acc, state) do
-    message = "expected attribute value or expression after `=`"
+    message =
+      "invalid attribute value after `=`. Expected either a value between quotes " <>
+        "(such as \"value\" or \'value\') or an Elixir expression between curly brackets (such as `{expr}`)"
+
     raise ParseError, file: state.file, line: line, column: column, description: message
   end
 
@@ -486,10 +476,6 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   defp pop_brace(%{braces: [pos | braces]} = state) do
     {pos, %{state | braces: braces}}
   end
-
-  defp downcase?(<<c, _::binary>>) when c in ?A..?Z, do: false
-  defp downcase?(<<_, rest::binary>>), do: downcase?(rest)
-  defp downcase?(<<>>), do: true
 
   defp warn(message, file, line) do
     stacktrace = Macro.Env.stacktrace(%{__ENV__ | file: file, line: line, module: nil})

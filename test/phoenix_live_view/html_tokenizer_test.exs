@@ -129,22 +129,6 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
         tokenize("<foo")
       end
     end
-
-    test "warn if a tag starting with a lowercase char is not all lowercase" do
-      output =
-        ExUnit.CaptureIO.capture_io(:standard_error, fn ->
-          tokenize("""
-          <div>
-            <sPan>
-              <div></div>
-            </span>
-          <diV>\
-          """)
-        end)
-
-      assert output =~ ~r"expected tag name containing only lowercase chars, got: sPan\n\s*+nofile:2:"
-      assert output =~ ~r"expected tag name containing only lowercase chars, got: diV\n\s*nofile:5:"
-    end
   end
 
   describe "attributes" do
@@ -191,7 +175,7 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
     end
 
     test "raise on missing value" do
-      message = "nofile:2:9: expected attribute value or expression after `=`"
+      message = ~r"nofile:2:9: invalid attribute value after `=`"
 
       assert_raise ParseError, message, fn ->
         tokenize("""
@@ -200,20 +184,20 @@ defmodule Phoenix.LiveView.HTMLTokenizerTest do
         """)
       end
 
-      message = "nofile:1:13: expected attribute value or expression after `=`"
+      message = ~r"nofile:1:13: invalid attribute value after `=`"
 
       assert_raise ParseError, message, fn ->
         tokenize(~S(<div class= >))
       end
 
-      message = "nofile:1:12: expected attribute value or expression after `=`"
+      message = ~r"nofile:1:12: invalid attribute value after `=`"
 
       assert_raise ParseError, message, fn ->
         tokenize("<div class=")
       end
     end
 
-    test "raise on missing attribure name" do
+    test "raise on missing attribute name" do
       assert_raise ParseError, "nofile:2:8: expected attribute name", fn ->
         tokenize("""
         <div>
