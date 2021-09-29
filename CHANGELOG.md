@@ -47,16 +47,29 @@ end
 When given only a module name, the first argument to `on_mount/4` will be the
 atom `:default`.
 
-#### LEEx templates in stateful LiveComponent
+#### LEEx templates in stateful LiveComponents
 
-Stateful LiveComponent (where an ID is given) must now return HEEx templates
+Stateful LiveComponents (where an `:id` is given) must now return HEEx templates
 (`~H` sigil or `.heex` extension). LEEx temlates (`~L` sigil or `.leex` extension)
 are no longer supported. This addresses bugs and allows stateful components
 to be rendered more efficiently client-side.
 
+#### Previously deprecated functionality
+
+Some functionality that was previously deprecated has been removed:
+
+  - Implicit assigns in `live_component` do-blocks is no longer supported
+  - Passing a `@socket` to `live_component` will raise when possible
+
 ### Enhancements
 
+  - Add `<.live_component module={FormComponent} id="form" />`
+
 ### Bug fixes
+
+### Deprecations
+
+  - `<%= live_component MyModule, id: @user.id, user: @user %>` is deprecated in favor of `<.live_component module={MyModule} id={@user.id} user={@user} />`. Notice the new API requires using HEEx templates. This change allows us to further improve LiveComponent and bring new features such as slots to them.
 
 ## 0.16.4 (2021-09-22)
 

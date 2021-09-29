@@ -25,26 +25,26 @@ defmodule Phoenix.LiveView.Component do
       For example, this is not allowed:
 
           <%= content_tag :div do %>
-            <%= live_component SomeComponent %>
+            <.live_component module={SomeComponent} id="myid" />
           <% end %>
 
       That's because the component is inside `content_tag`. However, this works:
 
           <div>
-            <%= live_component SomeComponent %>
+            <.live_component module={SomeComponent} id="myid" />
           </div>
 
       Components are also allowed inside Elixir's special forms, such as
       `if`, `for`, `case`, and friends.
 
           <%= for item <- items do %>
-            <%= live_component SomeComponent, id: item %>
+            <.live_component module={SomeComponent} id={item} />
           <% end %>
 
       However, using other module functions such as `Enum`, will not work:
 
           <%= Enum.map(items, fn item -> %>
-            <%= live_component SomeComponent, id: item %>
+            <.live_component module={SomeComponent} id={item} />
           <% end %>
       """
     end
@@ -486,8 +486,12 @@ defmodule Phoenix.LiveView.Engine do
       end
 
     # If we have a component, now we provide change tracking to individual keys.
+    # However, because live components have their own tracking, we skip them here.
     args =
       case {call, args} do
+        {:component, [{:&, _, [{:/, _, [{:live_component, _, _}, 1]}]} | _]} ->
+          args
+
         {:component, [fun, [do: block]]} ->
           [fun, to_component_tracking([], [inner_block: block], vars), [do: block]]
 
@@ -1143,10 +1147,9 @@ defmodule Phoenix.LiveView.Engine do
   defp classify_taint(:receive, [_]), do: :live
   defp classify_taint(:with, _), do: :live
 
+  # TODO: Remove me when live_component/2/3 are removed
   defp classify_taint(:live_component, [_, [do: _]]), do: :render
   defp classify_taint(:live_component, [_, _, [do: _]]), do: :render
-  # TODO: Remove me when live_component/4 is removed
-  defp classify_taint(:live_component, [_, _, _, [do: _]]), do: :render
   defp classify_taint(:component, [_, [do: _]]), do: :render
   defp classify_taint(:component, [_, _, [do: _]]), do: :render
   defp classify_taint(:render_layout, [_, _, _, [do: _]]), do: :render
