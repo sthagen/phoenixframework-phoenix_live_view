@@ -1,7 +1,8 @@
 defmodule Phoenix.LiveView.HTMLTokenizer do
   @moduledoc false
   @space_chars '\s\t\f'
-  @name_stop_chars @space_chars ++ '>/=\r\n'
+  @quote_chars '"\''
+  @stop_chars '>/=\r\n' ++ @quote_chars ++ @space_chars
 
   defmodule ParseError do
     defexception [:file, :line, :column, :description]
@@ -72,7 +73,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_text(<<c::utf8, rest::binary>>, line, column, buffer, acc, state) do
-    handle_text(rest, line, column + 1, [<<c::utf8>> | buffer], acc, state)
+    handle_text(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
   end
 
   defp handle_text(<<>>, line, column, buffer, acc, _state) do
@@ -94,7 +95,30 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_doctype(<<c::utf8, rest::binary>>, line, column, buffer, acc, state) do
-    handle_doctype(rest, line, column + 1, [<<c::utf8>> | buffer], acc, state)
+    handle_doctype(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
+  end
+
+  ## handle_script
+
+  defp handle_script("</script>" <> rest, line, column, buffer, acc, state) do
+    acc = [
+      {:tag_close, "script", %{line: line, column: column}}
+      | text_to_acc(buffer, acc, line, column)
+    ]
+
+    handle_text(rest, line, column + 9, [], acc, state)
+  end
+
+  defp handle_script("\r\n" <> rest, line, _column, buffer, acc, state) do
+    handle_script(rest, line + 1, state.column_offset, ["\r\n" | buffer], acc, state)
+  end
+
+  defp handle_script("\n" <> rest, line, _column, buffer, acc, state) do
+    handle_script(rest, line + 1, state.column_offset, ["\n" | buffer], acc, state)
+  end
+
+  defp handle_script(<<c::utf8, rest::binary>>, line, column, buffer, acc, state) do
+    handle_script(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
   end
 
   ## handle_comment
@@ -112,7 +136,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_comment(<<c::utf8, rest::binary>>, line, column, buffer, state) do
-    handle_comment(rest, line, column + 1, [<<c::utf8>> | buffer], state)
+    handle_comment(rest, line, column + 1, [char_or_bin(c) | buffer], state)
   end
 
   defp handle_comment(<<>>, line, column, _buffer, state) do
@@ -128,11 +152,6 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         acc = [{:tag_open, name, [], %{line: line, column: column - 1}} | acc]
         handle_maybe_tag_open_end(rest, line, new_column, acc, state)
 
-      {:warn, name, new_column, rest, message} ->
-        acc = [{:tag_open, name, [], %{line: line, column: column - 1}} | acc]
-        warn(message, state.file, line)
-        handle_maybe_tag_open_end(rest, line, new_column, acc, state)
-
       {:error, message} ->
         raise ParseError, file: state.file, line: line, column: column, description: message
     end
@@ -145,11 +164,6 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
       {:ok, name, new_column, rest} ->
         acc = [{:tag_close, name, %{line: line, column: column - 2}} | acc]
         handle_tag_close_end(rest, line, new_column, acc, state)
-
-      {:warn, name, new_column, rest, message} ->
-        acc = [{:tag_open, name, [], %{line: line, column: column - 1}} | acc]
-        warn(message, state.file, line)
-        handle_maybe_tag_open_end(rest, line, new_column, acc, state)
 
       {:error, message} ->
         raise ParseError, file: state.file, line: line, column: column, description: message
@@ -168,12 +182,12 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   ## handle_tag_name
 
   defp handle_tag_name(<<c::utf8, _rest::binary>> = text, column, buffer)
-       when c in @name_stop_chars do
+       when c in @stop_chars do
     done_tag_name(text, column, buffer)
   end
 
   defp handle_tag_name(<<c::utf8, rest::binary>>, column, buffer) do
-    handle_tag_name(rest, column + 1, [<<c::utf8>> | buffer])
+    handle_tag_name(rest, column + 1, [char_or_bin(c) | buffer])
   end
 
   defp handle_tag_name(<<>>, column, buffer) do
@@ -209,8 +223,13 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_maybe_tag_open_end(">" <> rest, line, column, acc, state) do
-    acc = reverse_attrs(acc)
-    handle_text(rest, line, column + 1, [], acc, state)
+    case reverse_attrs(acc) do
+      [{:tag_open, "script", _, _} | _] = acc ->
+        handle_script(rest, line, column + 1, [], acc, state)
+
+      acc ->
+        handle_text(rest, line, column + 1, [], acc, state)
+    end
   end
 
   defp handle_maybe_tag_open_end("{" <> rest, line, column, acc, state) do
@@ -258,7 +277,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
         acc = put_attr(acc, name)
         handle_maybe_attr_value(rest, line, new_column, acc, state)
 
-      {:error, message} ->
+      {:error, message, column} ->
         raise ParseError, file: state.file, line: line, column: column, description: message
     end
   end
@@ -278,18 +297,23 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   ## handle_attr_name
 
-  defp handle_attr_name(<<c::utf8, _rest::binary>>, _column, [])
-       when c in @name_stop_chars do
-    {:error, "expected attribute name"}
+  defp handle_attr_name(<<c::utf8, _rest::binary>>, column, _buffer)
+       when c in @quote_chars do
+    {:error, "invalid character in attribute name: #{<<c>>}", column}
+  end
+
+  defp handle_attr_name(<<c::utf8, _rest::binary>>, column, [])
+       when c in @stop_chars do
+    {:error, "expected attribute name", column}
   end
 
   defp handle_attr_name(<<c::utf8, _rest::binary>> = text, column, buffer)
-       when c in @name_stop_chars do
+       when c in @stop_chars do
     {:ok, buffer_to_string(buffer), column, text}
   end
 
   defp handle_attr_name(<<c::utf8, rest::binary>>, column, buffer) do
-    handle_attr_name(rest, column + 1, [<<c::utf8>> | buffer])
+    handle_attr_name(rest, column + 1, [char_or_bin(c) | buffer])
   end
 
   ## handle_maybe_attr_value
@@ -369,7 +393,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_attr_value_quote(<<c::utf8, rest::binary>>, delim, line, column, buffer, acc, state) do
-    handle_attr_value_quote(rest, delim, line, column + 1, [<<c::utf8>> | buffer], acc, state)
+    handle_attr_value_quote(rest, delim, line, column + 1, [char_or_bin(c) | buffer], acc, state)
   end
 
   defp handle_attr_value_quote(<<>>, delim, line, column, _buffer, _acc, state) do
@@ -441,7 +465,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_interpolation(<<c::utf8, rest::binary>>, line, column, buffer, state) do
-    handle_interpolation(rest, line, column + 1, [<<c::utf8>> | buffer], state)
+    handle_interpolation(rest, line, column + 1, [char_or_bin(c) | buffer], state)
   end
 
   defp handle_interpolation(<<>>, line, column, _buffer, _state) do
@@ -450,7 +474,11 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   ## helpers
 
+  @compile {:inline, ok: 1, char_or_bin: 1}
   defp ok(acc), do: acc
+
+  defp char_or_bin(c) when c <= 127, do: c
+  defp char_or_bin(c), do: <<c::utf8>>
 
   defp buffer_to_string(buffer) do
     IO.iodata_to_binary(Enum.reverse(buffer))
@@ -488,10 +516,5 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   defp pop_brace(%{braces: [pos | braces]} = state) do
     {pos, %{state | braces: braces}}
-  end
-
-  defp warn(message, file, line) do
-    stacktrace = Macro.Env.stacktrace(%{__ENV__ | file: file, line: line, module: nil})
-    IO.warn(message, stacktrace)
   end
 end
