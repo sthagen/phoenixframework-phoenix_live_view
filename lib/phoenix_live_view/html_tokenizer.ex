@@ -5,6 +5,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   @stop_chars '>/=\r\n' ++ @quote_chars ++ @space_chars
 
   defmodule ParseError do
+    @moduledoc false
     defexception [:file, :line, :column, :description]
 
     @impl true
@@ -29,11 +30,15 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
     end
   end
 
-  def tokenize(text, file, indentation, meta, tokens) do
+  def tokenize(text, file, indentation, meta, tokens, cont) do
     line = Keyword.get(meta, :line, 1)
     column = Keyword.get(meta, :column, 1)
     state = %{file: file, column_offset: indentation + 1, braces: []}
-    handle_text(text, line, column, [], tokens, state)
+
+    case cont do
+      :text -> handle_text(text, line, column, [], tokens, state)
+      :script -> handle_script(text, line, column, [], tokens, state)
+    end
   end
 
   ## handle_text
@@ -77,7 +82,7 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
   end
 
   defp handle_text(<<>>, line, column, buffer, acc, _state) do
-    ok(text_to_acc(buffer, acc, line, column))
+    ok(text_to_acc(buffer, acc, line, column), :text)
   end
 
   ## handle_doctype
@@ -119,6 +124,10 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   defp handle_script(<<c::utf8, rest::binary>>, line, column, buffer, acc, state) do
     handle_script(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
+  end
+
+  defp handle_script(<<>>, line, column, buffer, acc, _state) do
+    ok(text_to_acc(buffer, acc, line, column), :script)
   end
 
   ## handle_comment
@@ -474,8 +483,8 @@ defmodule Phoenix.LiveView.HTMLTokenizer do
 
   ## helpers
 
-  @compile {:inline, ok: 1, char_or_bin: 1}
-  defp ok(acc), do: acc
+  @compile {:inline, ok: 2, char_or_bin: 1}
+  defp ok(acc, cont), do: {acc, cont}
 
   defp char_or_bin(c) when c <= 127, do: c
   defp char_or_bin(c), do: <<c::utf8>>
