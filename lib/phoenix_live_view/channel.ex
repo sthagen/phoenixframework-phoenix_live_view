@@ -1154,8 +1154,8 @@ defmodule Phoenix.LiveView.Channel do
         raise RuntimeError, """
         existing upload for #{conf.name} already allowed in another component (#{existing_cid})
 
-        If you want to allow simultaneous uploads across different components, pass a
-        unique upload name to allow_upload/3
+        If you want to allow simultaneous uploads across different components,
+        pass a unique upload name to allow_upload/3
         """
     end
   end
