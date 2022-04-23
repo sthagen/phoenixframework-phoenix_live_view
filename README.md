@@ -5,6 +5,11 @@
 Phoenix LiveView enables rich, real-time user experiences
 with server-rendered HTML.
 
+Visit the [https://livebeats.fly.dev](https://livebeats.fly.dev/) demo to see the kinds of applications
+you can build, or see a sneak peak below:
+
+https://user-images.githubusercontent.com/576796/162234098-31b580fe-e424-47e6-b01d-cd2cfcf823a9.mp4
+
 After you [install Elixir](https://elixir-lang.org/install.html)
 in your machine, you can create your first LiveView app in two
 steps:
@@ -17,9 +22,14 @@ steps:
   * Use a declarative model to render HTML on the server
     over WebSockets with optional LongPolling fallback
 
-  * Smart templating and change tracking - after connected,
-    LiveView sends only what changed to the client, skipping
-    the template markup and reducing the payload
+  * A rich templating language, called HEEx, with support
+    for function components, slots, HTML validation, and more
+
+  * Smart change tracking - after connected, LiveView sends
+    only what changed to the client, skipping the template
+    markup and reducing the payload. This makes LiveView
+    payloads much smaller than server-rendered HTML and on
+    par with fine-tuned SPA applications
 
   * Live form validation with file upload support
 
@@ -27,9 +37,12 @@ steps:
     `phx-focus`, `phx-blur`, `phx-submit`, etc. `phx-hook` is
     included for the cases where you have to write JavaScript
 
-  * Code reuse via components, which break templates, state, and
-    event handling into reusable bits, which is essential in large
-    applications
+  * Perform optimistic updates and transitions via JavaScript
+    commands (`Phoenix.LiveView.JS`)
+
+  * Code reuse via stateful components, which break templates,
+    state, and event handling into reusable bits, which is essential
+    in large applications
 
   * Live navigation to enrich links and redirects to only load the
     minimum amount of content as users navigate between pages
@@ -106,14 +119,6 @@ anywhere else:
     sent over the wire. This is achievable thanks to Elixir's
     immutability and its ability to treat code as data.
 
-  * LiveView separates the static and dynamic parts of your templates.
-    When you first render a page, Phoenix LiveView renders and sends
-    the whole template to the browser. Then, for any new update, only
-    the modified dynamic content is resent. This alongside diff tracking
-    makes it so LiveView only sends a few bytes on every update, instead
-    of sending kilobytes on every other user interaction - which would
-    be detrimental to the user experience.
-
 ## Browser Support
 
 All current Chrome, Safari, Firefox, and MS Edge are supported.
@@ -125,7 +130,7 @@ $ npm install --save --prefix assets mdn-polyfills url-search-params-polyfill fo
 
 Note: The `shim-keyboard-event-key` polyfill is also required for [MS Edge 12-18](https://caniuse.com/#feat=keyboardevent-key).
 
-```javascript
+```
 // assets/js/app.js
 import "mdn-polyfills/Object.assign"
 import "mdn-polyfills/CustomEvent"
@@ -148,7 +153,7 @@ import "core-js/features/set"
 import "core-js/features/url"
 
 import {Socket} from "phoenix"
-import LiveSocket from "phoenix_live_view"
+import {LiveSocket} from "phoenix_live_view"
 ...
 ```
 

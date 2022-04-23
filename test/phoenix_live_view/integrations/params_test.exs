@@ -1,5 +1,7 @@
 defmodule Phoenix.LiveView.ParamsTest do
-  use ExUnit.Case
+  # Telemetry events need to run asynchronously
+  use ExUnit.Case, async: false
+
   import Plug.Conn
   import Phoenix.ConnTest
 
@@ -36,10 +38,10 @@ defmodule Phoenix.LiveView.ParamsTest do
       response = html_response(conn, 200)
 
       assert response =~
-               escape(~s|params: %{"id" => "123", "query1" => "query1", "query2" => "query2"}|)
+               rendered_to_string(~s|params: %{"id" => "123", "query1" => "query1", "query2" => "query2"}|)
 
       assert response =~
-               escape(~s|mount: %{"id" => "123", "query1" => "query1", "query2" => "query2"}|)
+               rendered_to_string(~s|mount: %{"id" => "123", "query1" => "query1", "query2" => "query2"}|)
     end
 
     test "telemetry events are emitted on success", %{conn: conn} do
@@ -139,8 +141,8 @@ defmodule Phoenix.LiveView.ParamsTest do
         |> get("/counter/123?q1=1", q2: "2")
         |> live()
 
-      assert html =~ escape(~s|params: %{"id" => "123", "q1" => "1", "q2" => "2"}|)
-      assert html =~ escape(~s|mount: %{"id" => "123", "q1" => "1", "q2" => "2"}|)
+      assert html =~ rendered_to_string(~s|params: %{"id" => "123", "q1" => "1", "q2" => "2"}|)
+      assert html =~ rendered_to_string(~s|mount: %{"id" => "123", "q1" => "1", "q2" => "2"}|)
     end
 
     test "is called on connected mount with query string params from live", %{conn: conn} do
@@ -148,7 +150,7 @@ defmodule Phoenix.LiveView.ParamsTest do
         conn
         |> live("/counter/123?q1=1")
 
-      assert html =~ escape(~s|%{"id" => "123", "q1" => "1"}|)
+      assert html =~ rendered_to_string(~s|%{"id" => "123", "q1" => "1"}|)
     end
 
     test "telemetry events are emitted on success", %{conn: conn} do
@@ -213,8 +215,8 @@ defmodule Phoenix.LiveView.ParamsTest do
         |> live()
 
       response = render(counter_live)
-      assert response =~ escape(~s|params: %{"from" => "rehandled_params", "id" => "123"}|)
-      assert response =~ escape(~s|mount: %{"from" => "handle_params", "id" => "123"}|)
+      assert response =~ rendered_to_string(~s|params: %{"from" => "rehandled_params", "id" => "123"}|)
+      assert response =~ rendered_to_string(~s|mount: %{"from" => "handle_params", "id" => "123"}|)
     end
 
     test "push_redirect", %{conn: conn} do
@@ -264,14 +266,14 @@ defmodule Phoenix.LiveView.ParamsTest do
       {:ok, counter_live, _html} = live(conn, "/counter/123")
 
       assert render_patch(counter_live, "/counter/123?filter=true") =~
-               escape(~s|%{"filter" => "true", "id" => "123"}|)
+               rendered_to_string(~s|%{"filter" => "true", "id" => "123"}|)
     end
 
     test "with encoded URL", %{conn: conn} do
       {:ok, counter_live, _html} = live(conn, "/counter/123")
 
       assert render_patch(counter_live, "/counter/Wm9uZTozNzYxOa%3d%3d?foo=bar+15%26") =~
-               escape(~s|%{"foo" => "bar 15&", "id" => "Wm9uZTozNzYxOa=="}|)
+               rendered_to_string(~s|%{"foo" => "bar 15&", "id" => "Wm9uZTozNzYxOa=="}|)
     end
   end
 
@@ -280,7 +282,7 @@ defmodule Phoenix.LiveView.ParamsTest do
       {:ok, counter_live, _html} = live(conn, "/counter/123")
 
       assert render_click(counter_live, :push_patch, %{to: "/counter/123?from=event_ack"}) =~
-               escape(~s|%{"from" => "event_ack", "id" => "123"}|)
+               rendered_to_string(~s|%{"from" => "event_ack", "id" => "123"}|)
 
       assert_patch(counter_live, "/counter/123?from=event_ack")
     end
@@ -289,14 +291,14 @@ defmodule Phoenix.LiveView.ParamsTest do
       {:ok, counter_live, _html} = live(conn, "/counter/123")
 
       send(counter_live.pid, {:push_patch, "/counter/123?from=handle_info"})
-      assert render(counter_live) =~ escape(~s|%{"from" => "handle_info", "id" => "123"}|)
+      assert render(counter_live) =~ rendered_to_string(~s|%{"from" => "handle_info", "id" => "123"}|)
     end
 
     test "from handle_cast", %{conn: conn} do
       {:ok, counter_live, _html} = live(conn, "/counter/123")
 
       :ok = GenServer.cast(counter_live.pid, {:push_patch, "/counter/123?from=handle_cast"})
-      assert render(counter_live) =~ escape(~s|%{"from" => "handle_cast", "id" => "123"}|)
+      assert render(counter_live) =~ rendered_to_string(~s|%{"from" => "handle_cast", "id" => "123"}|)
     end
 
     test "from handle_call", %{conn: conn} do
@@ -307,7 +309,7 @@ defmodule Phoenix.LiveView.ParamsTest do
       end
 
       :ok = GenServer.call(counter_live.pid, {:push_patch, next})
-      assert render(counter_live) =~ escape(~s|%{"from" => "handle_call", "id" => "123"}|)
+      assert render(counter_live) =~ rendered_to_string(~s|%{"from" => "handle_call", "id" => "123"}|)
     end
 
     test "from handle_params", %{conn: conn} do
@@ -327,7 +329,7 @@ defmodule Phoenix.LiveView.ParamsTest do
       :ok = GenServer.call(counter_live.pid, {:push_patch, next})
 
       html = render(counter_live)
-      assert html =~ escape(~s|%{"from" => "rehandled_params", "id" => "123"}|)
+      assert html =~ rendered_to_string(~s|%{"from" => "rehandled_params", "id" => "123"}|)
       assert html =~ "The value is: 1000"
 
       assert_receive {:handle_params, "http://www.example.com/counter/123?from=rehandled_params",
@@ -375,26 +377,6 @@ defmodule Phoenix.LiveView.ParamsTest do
     end
   end
 
-  describe "connect_params" do
-    test "connect_params can be read on mount", %{conn: conn} do
-      {:ok, counter_live, _html} =
-        conn |> put_connect_params(%{"connect1" => "1"}) |> live("/counter/123")
-
-      assert render(counter_live) =~ escape(~s|connect: %{"_mounts" => 0, "connect1" => "1"}|)
-    end
-  end
-
-  describe "connect_info" do
-    test "connect_params can be read on mount", %{conn: conn} do
-      {:ok, counter_live, _html} =
-        conn
-        |> put_connect_info(%{x_headers: [{"x-forwarded-for", "1.2.3.4"}]})
-        |> live("/counter/123")
-
-      assert render(counter_live) =~ escape(~s|x_headers: [{"x-forwarded-for", "1.2.3.4"}]|)
-    end
-  end
-
   describe "@live_action" do
     test "when initially set to nil", %{conn: conn} do
       {:ok, live, html} = live(conn, "/action")
@@ -429,11 +411,5 @@ defmodule Phoenix.LiveView.ParamsTest do
       assert html =~ "Mount action: :index"
       assert html =~ "Params: %{&quot;id&quot; =&gt; &quot;1&quot;}"
     end
-  end
-
-  defp escape(str) do
-    str
-    |> Phoenix.HTML.html_escape()
-    |> Phoenix.HTML.safe_to_string()
   end
 end

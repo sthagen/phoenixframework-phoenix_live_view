@@ -1,12 +1,15 @@
 defmodule Phoenix.LiveViewTest.ElementsLive do
   use Phoenix.LiveView
 
+  alias Phoenix.LiveView.JS
+
   def render(assigns) do
     ~H"""
     <%# lookups %>
     <div id="last-event"><%= @event %></div>
     <div id="scoped-render"><span>This</span> is a div</div>
     <div>This</div>
+    <div id="child-component"><%= live_component Phoenix.LiveViewTest.ElementsComponent, id: 1 %></div>
 
     <%# basic render_* %>
     <span id="span-no-attr">This is a span</span>
@@ -29,6 +32,8 @@ defmodule Phoenix.LiveViewTest.ElementsLive do
     <span id="span-keydown-phx-value" phx-keydown="span-keydown" phx-value-foo="123" phx-value-bar="456">This is a span</span>
     <span id="span-window-keydown-phx-value" phx-window-keydown="span-window-keydown" phx-value-foo="123" phx-value-bar="456">This is a span</span>
 
+    <button id="button-js-click" phx-click={JS.push("button-click")}>This is a JS button</button>
+    <button id="button-js-click-value" phx-click={JS.push("button-click", value: %{one: 1})}>This is a JS button with a value</button>
     <button id="button-disabled-click" phx-click="button-click" disabled>This is a button</button>
     <span id="span-click-no-value" phx-click="span-click">This is a span</span>
     <span id="span-click-value" phx-click="span-click" value="123" phx-value-extra="&lt;456&gt;">This is a span</span>
@@ -44,7 +49,7 @@ defmodule Phoenix.LiveViewTest.ElementsLive do
 
     <%# hooks %>
     <section phx-hook="Example" id="hook-section" phx-value-foo="ignore">Section</section>
-    <section phx-hook="Example" class="idless-hook">Section</section>
+    <section phx-hook="Example" id="hook-section-2" class="idless-hook">Section</section>
 
     <%# forms %>
     <a id="a-no-form" phx-change="hello" phx-submit="world">Change</a>
@@ -103,6 +108,7 @@ defmodule Phoenix.LiveViewTest.ElementsLive do
       <%= Phoenix.HTML.Form.datetime_select :hello, :naive_select %>
       <input name="hello[utc_text]" type="text">
       <%= Phoenix.HTML.Form.datetime_select :hello, :utc_select, second: [] %>
+      <input name="hello[individual]" type="text" phx-change="individual-changed"/>
     </form>
 
     <form id="trigger-form-default" phx-submit="form-submit-trigger"
@@ -130,6 +136,36 @@ defmodule Phoenix.LiveViewTest.ElementsLive do
 
   def handle_event("form-submit-trigger", _value, socket) do
     {:noreply, assign(socket, :trigger_action, true)}
+  end
+
+  def handle_event(event, value, socket) do
+    {:noreply, assign(socket, :event, "#{event}: #{inspect(value)}")}
+  end
+end
+
+defmodule Phoenix.LiveViewTest.ElementsComponent do
+  use Phoenix.LiveComponent
+
+  alias Phoenix.LiveView.JS
+
+  def render(assigns) do
+    ~H"""
+    <div>
+      <div id="component-last-event"><%= @event %></div>
+
+      <button id="component-button-js-click-target" phx-click={JS.push("button-click", target: @myself)}>button</button>
+    </div>
+    """
+  end
+
+  def mount(socket) do
+    socket = assign(socket, :event, nil)
+
+    {:ok, socket}
+  end
+
+  def handle_params(params, _uri, socket) do
+    {:noreply, assign(socket, :event, "handle_params: #{inspect(params)}")}
   end
 
   def handle_event(event, value, socket) do

@@ -35,6 +35,20 @@ defmodule Phoenix.LiveView.DiffTest do
     """
   end
 
+  def nested_comprehension_template(assigns) do
+    ~H"""
+    <div>
+      <h1><%= @title %></h1>
+      <%= for name <- @names do %>
+        <br/><%= name %>
+        <%= for score <- @scores do %>
+          <br/><%= score %>
+        <% end %>
+      <% end %>
+    </div>
+    """
+  end
+
   defp nested_rendered(changed? \\ true) do
     %Rendered{
       static: ["<h2>", "</h2>", "<span>", "</span>"],
@@ -228,6 +242,34 @@ defmodule Phoenix.LiveView.DiffTest do
              }
 
       assert {^fingerprint, %{1 => ^comprehension_print}} = socket.fingerprints
+    end
+
+    test "nested comprehensions" do
+      %{fingerprint: fingerprint} =
+        rendered =
+        nested_comprehension_template(%{
+          title: "Users",
+          names: ["phoenix", "elixir"],
+          scores: [1, 2]
+        })
+
+      {socket, full_render, _} = render(rendered)
+
+      assert full_render == %{
+               0 => "Users",
+               1 => %{
+                 d: [
+                   ["phoenix", %{d: [["1"], ["2"]], s: 0}],
+                   ["elixir", %{d: [["1"], ["2"]], s: 0}]
+                 ],
+                 p: %{0 => ["\n      <br>", "\n    "]},
+                 s: ["\n    <br>", "\n    ", "\n  "]
+               },
+               :s => ["<div>\n  <h1>", "</h1>\n  ", "\n</div>"]
+             }
+
+      assert {^fingerprint, %{1 => comprehension_print}} = socket.fingerprints
+      assert is_integer(comprehension_print)
     end
   end
 
@@ -641,7 +683,7 @@ defmodule Phoenix.LiveView.DiffTest do
       assert full_render == %{
                0 => %{
                  0 => "DEFAULT",
-                 2 => "DEFAULT",
+                 2 => "DEFAULT"
                }
              }
 
@@ -1236,10 +1278,11 @@ defmodule Phoenix.LiveView.DiffTest do
       assert full_render == %{
                0 => %{
                  d: [
-                   ["foo", %{d: [["0", 1], ["1", 2]], s: ["\n      ", ": ", "\n    "]}],
-                   ["bar", %{d: [["0", 3], ["1", 4]], s: ["\n      ", ": ", "\n    "]}]
+                   ["foo", %{d: [["0", 1], ["1", 2]], s: 0}],
+                   ["bar", %{d: [["0", 3], ["1", 4]], s: 0}]
                  ],
-                 s: ["\n    ", "\n    ", "\n  "]
+                 s: ["\n    ", "\n    ", "\n  "],
+                 p: %{0 => ["\n      ", ": ", "\n    "]}
                },
                :c => %{
                  1 => %{0 => "index_1", 1 => "world", :s => ["<div>FROM ", " ", "</div>"]},
@@ -1379,11 +1422,9 @@ defmodule Phoenix.LiveView.DiffTest do
 
       assert full_render == %{
                0 => %{
-                 d: [
-                   ["1", %{0 => 1, :s => ["<div>\n  ", "\n</div>"]}],
-                   ["2", %{0 => 2, :s => ["<div>\n  ", "\n</div>"]}]
-                 ],
-                 s: ["\n    ", ": ", "\n  "]
+                 d: [["1", %{0 => 1, :s => 0}], ["2", %{0 => 2, :s => 0}]],
+                 s: ["\n    ", ": ", "\n  "],
+                 p: %{0 => ["<div>\n  ", "\n</div>"]}
                },
                :c => %{
                  1 => %{0 => "index_1", 1 => "world", :s => ["<div>FROM ", " ", "</div>"]},
@@ -1427,12 +1468,11 @@ defmodule Phoenix.LiveView.DiffTest do
 
       assert full_render == %{
                0 => %{
-                 d: [[""], [%{0 => "2", 1 => 1, :s => ["", ": ", ""]}]],
-                 s: ["\n    ", "\n  "]
+                 d: [[""], [%{0 => "2", 1 => 1, :s => 0}]],
+                 s: ["\n    ", "\n  "],
+                 p: %{0 => ["", ": ", ""]}
                },
-               :c => %{
-                 1 => %{0 => "index_2", 1 => "world", :s => ["<div>FROM ", " ", "</div>"]}
-               },
+               :c => %{1 => %{0 => "index_2", 1 => "world", :s => ["<div>FROM ", " ", "</div>"]}},
                :s => ["<div>\n  ", "\n</div>"]
              }
 

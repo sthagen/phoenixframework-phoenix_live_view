@@ -2,7 +2,7 @@
 
 LiveView begins its life-cycle as a regular HTTP request. Then a stateful
 connection is established. Both the HTTP request and the stateful connection
-receives the client data via parameters and session.
+receive the client data via parameters and session.
 
 This means that any session validation must happen both in the HTTP request
 (plug pipeline) and the stateful connection (LiveView mount).
@@ -15,7 +15,7 @@ a user. Authorization is about telling if a user has access to a certain
 resource or feature in the system.
 
 In a regular web application, once a user is authenticated, for example by
-entering his email and password, or by using a third-party service such as
+entering their email and password, or by using a third-party service such as
 Google, Twitter, or Facebook, a token identifying the user is stored in the
 session, which is a cookie (a key-value pair) stored in the user's browser.
 
@@ -59,14 +59,14 @@ should execute those same verifications:
       {:ok, socket}
     end
 
-LiveView v0.16 includes the `on_mount` (`Phoenix.LiveView.on_mount/1`) hook,
+LiveView v0.17 includes the `on_mount` (`Phoenix.LiveView.on_mount/1`) hook,
 which allows you to encapsulate this logic and execute it on every mount,
 as you would with plug:
 
     defmodule MyAppWeb.UserLiveAuth do
       import Phoenix.LiveView
 
-      def mount(params, %{"user_id" => user_id} = _session, socket) do
+      def on_mount(:default, params, %{"user_id" => user_id} = _session, socket) do
         socket = assign_new(socket, :current_user, fn ->
           Accounts.get_user!(user_id)
         end)
@@ -79,18 +79,32 @@ as you would with plug:
       end
     end
 
-and then use it on all relevant LiveViews:
+
+We use [`assign_new/3`](`Phoenix.LiveView.assign_new/3`). This is a
+convenience to avoid fetching the `current_user` multiple times across
+LiveViews.
+
+Now we can use the hook whenever relevant:
 
     defmodule MyAppWeb.PageLive do
-      use Phoenix.LiveView
+      use MyAppWeb, :live_view
       on_mount MyAppWeb.UserLiveAuth
 
       ...
     end
 
-Note in the snippet above we used [`assign_new/3`](`Phoenix.LiveView.assign_new/3`).
-This is a convenience to avoid fetching the `current_user` multiple times across
-LiveViews.
+If you prefer, you can add the hook to `def live_view` under `MyAppWeb`,
+to run it on all LiveViews by default:
+
+    def live_view do
+      quote do
+        use Phoenix.LiveView,
+          layout: {<%= web_namespace %>.LayoutView, "live.html"}
+
+        on_mount MyAppWeb.UserLiveAuth
+        unquote(view_helpers())
+      end
+    end
 
 ## Events considerations
 
@@ -255,7 +269,7 @@ a live session, then the `pipe_through` checks are not necessary.
 Declaring the `on_mount` on `live_session` is exactly the same as
 declaring it in each LiveView inside the `live_session`. It will be
 executed every time a LiveView is mounted, even after `live_redirect`s.
-The important to keep in mind is:
+The important concepts to keep in mind are:
 
   * If you have both LiveViews and regular web requests, then you
     must always authorize and authenticate your LiveViews (using

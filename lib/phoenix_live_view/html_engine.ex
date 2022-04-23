@@ -49,10 +49,10 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     token_state =
       state
-      |> token_state()
+      |> token_state(nil)
       |> handle_tokens(tokens)
+      |> validate_unclosed_tags!("template")
 
-    validate_unclosed_tags!(token_state)
     opts = [root: token_state.root || false]
     ast = invoke_subengine(token_state, :handle_body, [opts])
 
@@ -68,27 +68,27 @@ defmodule Phoenix.LiveView.HTMLEngine do
     end
   end
 
-  defp validate_unclosed_tags!(%{tags: []} = state) do
+  defp validate_unclosed_tags!(%{tags: []} = state, _context) do
     state
   end
 
-  defp validate_unclosed_tags!(%{tags: [tag | _]} = state) do
+  defp validate_unclosed_tags!(%{tags: [tag | _]} = state, context) do
     {:tag_open, name, _attrs, %{line: line, column: column}} = tag
     file = state.file
-    message = "end of file reached without closing tag for <#{name}>"
+    message = "end of #{context} reached without closing tag for <#{name}>"
     raise ParseError, line: line, column: column, file: file, description: message
   end
 
   @doc false
   def handle_end(state) do
     state
-    |> token_state()
-    |> update_subengine(:handle_begin, [])
+    |> token_state(false)
     |> handle_tokens(Enum.reverse(state.tokens))
+    |> validate_unclosed_tags!("do-block")
     |> invoke_subengine(:handle_end, [])
   end
 
-  defp token_state(%{subengine: subengine, substate: substate, file: file}) do
+  defp token_state(%{subengine: subengine, substate: substate, file: file}, root) do
     %{
       subengine: subengine,
       substate: substate,
@@ -96,7 +96,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
       stack: [],
       tags: [],
       slots: [],
-      root: nil
+      root: root
     }
   end
 
@@ -108,7 +108,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   @doc false
   def handle_begin(state) do
-    %{state | tokens: []}
+    update_subengine(%{state | tokens: []}, :handle_begin, [])
   end
 
   @doc false
@@ -116,6 +116,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
     handle_text(state, [], text)
   end
 
+  @doc false
   def handle_text(state, meta, text) do
     %{file: file, indentation: indentation, tokens: tokens, cont: cont} = state
     {tokens, cont} = HTMLTokenizer.tokenize(text, file, indentation, meta, tokens, cont)
@@ -253,6 +254,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
          state
        )
        when first in ?A..?Z do
+    attrs = remove_phx_no_break(attrs)
     file = state.file
     {mod, fun} = decompose_remote_component_tag!(tag_name, tag_meta, file)
     {assigns, state} = build_self_close_component_assigns(attrs, tag_meta.line, state)
@@ -287,6 +289,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
     {{:tag_open, _name, attrs, %{mod_fun: {mod, fun}, line: line}}, state} =
       pop_tag!(state, token)
 
+    attrs = remove_phx_no_break(attrs)
     {assigns, state} = build_component_assigns(attrs, line, state)
 
     ast =
@@ -305,6 +308,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
          {:tag_open, "." <> name, attrs, %{self_close: true, line: line}},
          state
        ) do
+    attrs = remove_phx_no_break(attrs)
     fun = String.to_atom(name)
     {assigns, state} = build_self_close_component_assigns(attrs, line, state)
 
@@ -334,6 +338,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
   # Slot (self close)
 
   defp handle_token({:tag_open, ":" <> slot_name, attrs, %{self_close: true} = tag_meta}, state) do
+    attrs = remove_phx_no_break(attrs)
     %{line: line} = tag_meta
     slot_key = String.to_atom(slot_name)
 
@@ -363,6 +368,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp handle_token({:tag_close, ":" <> slot_name, _tag_close_meta} = token, state) do
     {{:tag_open, _name, attrs, %{line: line} = tag_meta}, state} = pop_tag!(state, token)
+    attrs = remove_phx_no_break(attrs)
     slot_key = String.to_atom(slot_name)
 
     {let, roots, attrs} = split_component_attrs(attrs, state.file)
@@ -370,7 +376,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     ast =
       quote line: line do
-        Phoenix.LiveView.Helpers.slot(unquote(slot_key), do: unquote(clauses))
+        Phoenix.LiveView.Helpers.inner_block(unquote(slot_key), do: unquote(clauses))
       end
 
     attrs = [__slot__: slot_key, inner_block: ast] ++ attrs
@@ -394,6 +400,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp handle_token({:tag_close, "." <> fun_name, _tag_close_meta} = token, state) do
     {{:tag_open, _name, attrs, %{line: line}}, state} = pop_tag!(state, token)
+    attrs = remove_phx_no_break(attrs)
     fun = String.to_atom(fun_name)
     {assigns, state} = build_component_assigns(attrs, line, state)
 
@@ -414,6 +421,8 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp handle_token({:tag_open, name, attrs, %{self_close: true} = tag_meta}, state) do
     suffix = if void?(name), do: ">", else: "></#{name}>"
+    attrs = remove_phx_no_break(attrs)
+    validate_phx_attrs!(attrs, tag_meta, state)
 
     state
     |> set_root_on_tag()
@@ -423,6 +432,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   # HTML element
 
   defp handle_token({:tag_open, name, attrs, tag_meta} = token, state) do
+    validate_phx_attrs!(attrs, tag_meta, state)
+    attrs = remove_phx_no_break(attrs)
+
     state
     |> set_root_on_tag()
     |> push_tag(token)
@@ -464,11 +476,11 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp handle_tag_attrs(state, meta, attrs) do
     Enum.reduce(attrs, state, fn
       {:root, {:expr, value, %{line: line, column: col}}}, state ->
-        attrs = Code.string_to_quoted!(value, line: line, column: col)
+        attrs = Code.string_to_quoted!(value, line: line, column: col, file: state.file)
         handle_attrs_escape(state, meta, attrs)
 
       {name, {:expr, value, %{line: line, column: col}}}, state ->
-        attr = Code.string_to_quoted!(value, line: line, column: col)
+        attr = Code.string_to_quoted!(value, line: line, column: col, file: state.file)
         handle_attr_escape(state, meta, name, attr)
 
       {name, {:string, value, %{delimiter: ?"}}}, state ->
@@ -485,7 +497,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp handle_attrs_escape(state, meta, attrs) do
     ast =
       quote line: meta[:line] do
-        Phoenix.HTML.Tag.attributes_escape(unquote(attrs))
+        Phoenix.HTML.attributes_escape(unquote(attrs))
       end
 
     update_subengine(state, :handle_expr, ["=", ast])
@@ -588,9 +600,13 @@ defmodule Phoenix.LiveView.HTMLEngine do
     raise ArgumentError, "expected a binary in <>, got: #{inspect(value)}"
   end
 
-  defp safe_unless_special("aria"), do: "aria"
-  defp safe_unless_special("class"), do: "class"
-  defp safe_unless_special("data"), do: "data"
+  # We mark attributes as safe so we don't escape them
+  # at rendering time. However, some attributes are
+  # specially handled, so we keep them as strings shape.
+  defp safe_unless_special("id"), do: :id
+  defp safe_unless_special("aria"), do: :aria
+  defp safe_unless_special("class"), do: :class
+  defp safe_unless_special("data"), do: :data
   defp safe_unless_special(name), do: {:safe, name}
 
   ## build_self_close_component_assigns/build_component_assigns
@@ -608,7 +624,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
     inner_block_assigns =
       quote line: line do
         %{__slot__: :inner_block,
-          inner_block: Phoenix.LiveView.Helpers.slot(:inner_block, do: unquote(clauses))}
+          inner_block: Phoenix.LiveView.Helpers.inner_block(:inner_block, do: unquote(clauses))}
       end
 
     {slots, state} = pop_slots(state)
@@ -625,9 +641,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp split_component_attr(
          {:root, {:expr, value, %{line: line, column: col}}},
          {let, r, a},
-         _file
+         file
        ) do
-    quoted_value = Code.string_to_quoted!(value, line: line, column: col)
+    quoted_value = Code.string_to_quoted!(value, line: line, column: col, file: file)
     quoted_value = quote line: line, do: Map.new(unquote(quoted_value))
     {let, [quoted_value | r], a}
   end
@@ -635,9 +651,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp split_component_attr(
          {"let", {:expr, value, %{line: line, column: col} = meta}},
          {nil, r, a},
-         _file
+         file
        ) do
-    quoted_value = Code.string_to_quoted!(value, line: line, column: col)
+    quoted_value = Code.string_to_quoted!(value, line: line, column: col, file: file)
     {{quoted_value, meta}, r, a}
   end
 
@@ -661,9 +677,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp split_component_attr(
          {name, {:expr, value, %{line: line, column: col}}},
          {let, r, a},
-         _file
+         file
        ) do
-    quoted_value = Code.string_to_quoted!(value, line: line, column: col)
+    quoted_value = Code.string_to_quoted!(value, line: line, column: col, file: file)
     {let, r, [{String.to_atom(name), quoted_value} | a]}
   end
 
@@ -757,4 +773,58 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp void?(_), do: false
 
   defp to_location(%{line: line, column: column}), do: [line: line, column: column]
+
+  defp remove_phx_no_break(attrs) do
+    List.keydelete(attrs, "phx-no-format", 0)
+  end
+
+  # Check if `phx-update` or `phx-hook` is present in attrs and raises in case
+  # there is no ID attribute set.
+  defp validate_phx_attrs!(attrs, meta, state),
+    do: validate_phx_attrs!(attrs, meta, state, nil, false)
+
+  defp validate_phx_attrs!([], meta, state, attr, false)
+       when attr in ["phx-update", "phx-hook"] do
+    message = "attribute \"#{attr}\" requires the \"id\" attribute to be set"
+
+    raise ParseError,
+      line: meta.line,
+      column: meta.column,
+      file: state.file,
+      description: message
+  end
+
+  defp validate_phx_attrs!([], _meta, _state, _attr, _id?), do: :ok
+
+  # Handle <div phx-update="ignore" {@some_var}>Content</div> since here the ID
+  # might be inserted dynamically so we can't raise at compile time.
+  defp validate_phx_attrs!([{:root, _} | t], meta, state, attr, _id?),
+    do: validate_phx_attrs!(t, meta, state, attr, true)
+
+  defp validate_phx_attrs!([{"id", _} | t], meta, state, attr, _id?),
+    do: validate_phx_attrs!(t, meta, state, attr, true)
+
+  defp validate_phx_attrs!([{"phx-update", {:string, value, _meta}} | t], meta, state, _attr, id?) do
+    if value in ~w(ignore append prepend replace) do
+      validate_phx_attrs!(t, meta, state, "phx-update", id?)
+    else
+      message = "the value of the attribute \"phx-update\" must be: ignore, append or prepend"
+
+      raise ParseError,
+        line: meta.line,
+        column: meta.column,
+        file: state.file,
+        description: message
+    end
+  end
+
+  defp validate_phx_attrs!([{"phx-update", _attrs} | t], meta, state, _attr, id?) do
+    validate_phx_attrs!(t, meta, state, "phx-update", id?)
+  end
+
+  defp validate_phx_attrs!([{"phx-hook", _} | t], meta, state, _attr, id?),
+    do: validate_phx_attrs!(t, meta, state, "phx-hook", id?)
+
+  defp validate_phx_attrs!([_h | t], meta, state, attr, id?),
+    do: validate_phx_attrs!(t, meta, state, attr, id?)
 end

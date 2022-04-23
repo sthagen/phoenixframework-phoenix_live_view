@@ -1,10 +1,115 @@
 # Changelog
 
-## 0.17.0
+## 0.17.10 (Unreleased)
+
+### Bug fixes
+  - [Formatter] Preserve single quote delimiter on attrs
+  - [Formatter] Do not format inline elements surrounded by texts without whitespaces
+  - [Formatter] Keep text and eex along when there isn't a whitespace
+  - [Formatter] Fix intentional line breaks after eex expressions
+  - [Formatter] Handle self close tags as inline
+  - [Formatter] Do not format inline elements without whitespaces among them
+  - [Formatter] Do not format when attr contenteditable is present
+
+### Enhancements
+  - [Formatter] Introduce special attr phx-no-format to skip formatting
+
+## 0.17.9 (2022-04-07)
+
+### Bug fixes
+  - Fix sticky LiveViews failing to be patched during live navigation
+  - Do not raise on dynamic `phx-update` value
+
+## 0.17.8 (2022-04-06)
+
+### Enhancements
+  - Add HEEx formatter
+  - Support `phx-change` on individual inputs
+  - Dispatch `MouseEvent` on client
+  - Add `:bubbles` option to `JS.dispatch` to control event bubbling
+  - Expose underlying `liveSocket` instance on hooks
+  - Enable client debug by default on localhost
+
+### Bug fixes
+  - Fix hook and sticky LiveView issues caused by back-to-back live redirects from mount
+  - Fix hook destroyed callback failing to be invoked for children of phx-remove in some cases
+  - Do not failsafe reload the page on push timeout if disconnected
+  - Do not bubble navigation click events to regular phx-click's
+
+## 0.17.7 (2022-02-07)
+
+### Enhancements
+  - Optimize nested for comprehension diffs
+
+### Bug fixes
+  - Fix error when `live_redirect` links are clicked when not connected in certain cases
+
+## 0.17.6 (2022-01-18)
+
+### Enhancements
+  - Add `JS.set_attribute` and `JS.remove_attribute`
+  - Add `sticky: true` option to `live_render` to maintain a nested child on across live redirects
+  - Dispatch `phx:show-start`, `phx:show-end`, `phx:hide-start` and `phx:hide-end` on `JS.show|hide|toggle`
+  - Add `get_connect_info/2` that also works on disconnected render
+  - Add `LiveSocket` constructor options for configuration failsafe behavior via new `maxReloads`, `reloadJitterMin`, `reloadJitterMax`, `failsafeJitter` options
+
+### Bug fixes
+  - Show form errors after submit even when no changes occur on server
+  - Fix `phx-disable-with` failing to disable elements outside of forms
+  - Fix phx ref tracking leaving elements in awaiting state when targeting an external LiveView
+  - Fix diff on response failing to await for active transitions in certain cases
+  - Fix `phx-click-away` not respecting `phx-target`
+  - Fix "disconnect" broadcast failing to failsafe refresh the page
+  - Fix `JS.push` with `:target` failing to send to correct component in certain cases
+
+### Deprecations
+   - Deprecate `Phoenix.LiveView.get_connect_info/1` in favor of `get_connect_info/2`
+   - Deprecate `Phoenix.LiveViewTest.put_connect_info/2` in favor of calling the relevant functions in `Plug.Conn`
+   - Deprecate returning "raw" values from upload callbacks on `Phoenix.LiveView.consume_uploaded_entry/3` and `Phoenix.LiveView.consume_uploaded_entries/3`. The callback must return either `{:ok, value}` or `{:postpone, value}`. Returning any other value will emit a warning.
+
+## 0.17.5 (2021-11-02)
+
+### Bug fixes
+  - Do not trigger `phx-click-away` if element is not visible
+  - Fix `phx-remove` failing to tear down nested live children
+
+## 0.17.4 (2021-11-01)
+
+### Bug fixes
+  - Fix variable scoping issues causing various content block or duplication rendering bugs
+
+## 0.17.3 (2021-10-28)
+
+### Enhancements
+  - Support 3-tuple for JS class transitions to support staged animations where a transition class is applied with a starting and ending class
+  - Allow JS commands to be executed on DOM nodes outside of the LiveView container
+
+### Optimization
+  - Avoid duplicate statics inside comprehension. In previous versions, comprehensions were able to avoid duplication only in the content of their root. Now we recursively traverse all comprehension nodes and send the static only once for the whole comprehension. This should massively reduce the cost of sending comprehensions over the wire
+
+### Bug fixes
+  - Fix HTML engine bug causing expressions to be duplicated or not rendered correctly
+  - Fix HTML engine bug causing slots to not be re-rendered when they should have
+  - Fix form recovery being sent to wrong target
+
+## 0.17.2 (2021-10-22)
+
+### Bug fixes
+  - Fix HTML engine bug causing attribute expressions to be incorrectly evaluated in certain cases
+  - Fix show/hide/toggle custom display not being restored
+  - Fix default `to` target for `JS.show|hide|dispatch`
+  - Fix form input targeting
+
+## 0.17.1 (2021-10-21)
+
+### Bug fixes
+  - Fix SVG element support for `phx` binding interactions
+
+## 0.17.0 (2021-10-21)
 
 ### Breaking Changes
 
-#### on_mount changes
+#### `on_mount` changes
 
 The hook API introduced in LiveView 0.16 has been improved based on feedback.
 LiveView 0.17 removes the custom module-function callbacks for the
@@ -50,9 +155,17 @@ atom `:default`.
 #### LEEx templates in stateful LiveComponents
 
 Stateful LiveComponents (where an `:id` is given) must now return HEEx templates
-(`~H` sigil or `.heex` extension). LEEx temlates (`~L` sigil or `.leex` extension)
+(`~H` sigil or `.heex` extension). LEEx templates (`~L` sigil or `.leex` extension)
 are no longer supported. This addresses bugs and allows stateful components
 to be rendered more efficiently client-side.
+
+#### `phx-disconnected` class has been replaced with `phx-loading`
+
+Due to a bug in the newly released Safari 15, the previously used `.phx-disconnected` class has been replaced by a new `.phx-loading` class. The reason for the change is `phx.new` included a `.phx-disconnected` rule in the generated `app.css` which triggers the Safari bug. Renaming the class avoids applying the erroneous rule for existing applications. Folks can upgrade by simply renaming their `.phx-disconnected` rules to `.phx-loading`.
+
+#### `phx-capture-click` has been deprecated in favor of `phx-click-away`
+
+The new `phx-click-away` binding replaces `phx-capture-click` and is much more versatile because it can detect "click focus" being lost on containers.
 
 #### Removal of previously deprecated functionality
 
@@ -63,15 +176,23 @@ Some functionality that was previously deprecated has been removed:
 
 ### Enhancements
   - Allow slots in function components: they are marked as `<:slot_name>` and can be rendered with `<%= render_slot @slot_name %>`
+  - Add `JS` command for executing JavaScript utility operations on the client with an extended push API
   - Optimize string attributes:
     - If the attribute is a string interpolation, such as `<div class={"foo bar #{@baz}"}>`, only the interpolation part is marked as dynamic
     - If the attribute can be empty, such as "class" and "style", keep the attribute name as static
   - Add a function component for rendering `Phoenix.LiveComponent`. Instead of `<%= live_component FormComponent, id: "form" %>`, you must now do: `<.live_component module={FormComponent} id="form" />`
 
 ### Bug fixes
-  - Add workaround for Safari bug causing img tags with srcset and video with autoplay to fail to render
+  - Fix LiveViews with form recovery failing to properly mount following a reconnect when preceded by a live redirect
+  - Fix stale session causing full redirect fallback when issuing a `push_redirect` from mount
+  - Add workaround for Safari bug causing `<img>` tags with srcset and video with autoplay to fail to render
   - Support EEx interpolation inside HTML comments in HEEx templates
+  - Support HTML tags inside script tags (as in regular HTML)
+  - Raise if using quotes in attribute names
+  - Include the filename in error messages when it is not possible to parse interpolated attributes
   - Make sure the test client always sends the full URL on `live_patch`/`live_redirect`. This mirrors the behaviour of the JavaScript client
+  - Do not reload flash from session on `live_redirect`s
+  - Fix select drop-down flashes in Chrome when the DOM is patched during focus
 
 ### Deprecations
   - `<%= live_component MyModule, id: @user.id, user: @user %>` is deprecated in favor of `<.live_component module={MyModule} id={@user.id} user={@user} />`. Notice the new API requires using HEEx templates. This change allows us to further improve LiveComponent and bring new features such as slots to them.
@@ -83,7 +204,7 @@ Some functionality that was previously deprecated has been removed:
   - Improve HEEx error messages
   - Relax HTML tag validation to support mixed case tags
   - Support self closing HTML tags
-  - Remove requirement for handle_params to be defined for lifecycle hooks
+  - Remove requirement for `handle_params` to be defined for lifecycle hooks
 
 ### Bug fixes
   - Fix pushes failing to include channel `join_ref` on messages
@@ -97,10 +218,10 @@ Some functionality that was previously deprecated has been removed:
 
 ### Enhancements
   - Improve error messages on tokenization
-  - Improve error message if inner_block is missing
+  - Improve error message if `@inner_block` is missing
 
 ### Bug fixes
-  - Fix phx-change form recovery event being sent to wrong component on reconnect when component order changes
+  - Fix `phx-change` form recovery event being sent to wrong component on reconnect when component order changes
 
 ## 0.16.1 (2021-08-26)
 
@@ -111,11 +232,11 @@ Some functionality that was previously deprecated has been removed:
 
 ### Bug fixes
   - Do not generate CSRF tokens for non-POST forms
-  - Do not add compile-time dependencies on on_mount declarations
+  - Do not add compile-time dependencies on `on_mount` declarations
 
 ## 0.16.0 (2021-08-10)
 
-## # Security Considerations Upgrading from 0.15
+### Security Considerations Upgrading from 0.15
 
 LiveView v0.16 optimizes live redirects by supporting navigation purely
 over the existing WebSocket connection. This is accomplished by the new
@@ -149,7 +270,7 @@ and example usage.
 
 ### New HTML Engine
 
-LiveView v0.16 introduces HEEx (HTML+EEx) templates and the concept of function
+LiveView v0.16 introduces HEEx (HTML + EEx) templates and the concept of function
 components via `Phoenix.Component`. The new HEEx templates validate the markup in
 the template while also providing smarter change tracking as well as syntax
 conveniences to make it easier to build composable components.
@@ -269,6 +390,13 @@ Change it to:
 import { LiveSocket } from "phoenix_live_view"
 ```
 
+Additionally on the client, the root LiveView element no longer exposes the
+LiveView module name, therefore the `phx-view` attribute is never set.
+Similarly, the `viewName` property of client hooks has been removed.
+
+Codebases calling a custom function `component/3` should rename it or specify its module to avoid a conflict,
+as LiveView introduces a macro with that name and it is special cased by the underlying engine.
+
 ### Enhancements
   - Introduce HEEx templates
   - Introduce `Phoenix.Component`
@@ -287,12 +415,12 @@ import { LiveSocket } from "phoenix_live_view"
 
 ### Bug fixes
   - Make sure components are loaded on `render_component` to ensure all relevant callbacks are invoked
-  - Fix `Phoenix.LiveViewTest.page_title` returning nil in some cases
+  - Fix `Phoenix.LiveViewTest.page_title` returning `nil` in some cases
   - Fix buttons being re-enabled when explicitly set to disabled on server
   - Fix live patch failing to update URL when live patch link is patched again via `handle_params` within the same callback lifecycle
   - Fix `phx-no-feedback` class not applied when page is live-patched
-  - Fix `DOMException, querySelector, not a valid selector` when performing DOM lookups on non-stanard IDs
-  - Fix select dropdown flashing close/opened when assigns are updated on Chrome/MacOS
+  - Fix `DOMException, querySelector, not a valid selector` when performing DOM lookups on non-standard IDs
+  - Fix select dropdown flashing close/opened when assigns are updated on Chrome/macOS
   - Fix error with multiple `live_file_input` in one form
   - Fix race condition in `showError` causing null `querySelector`
   - Fix statics not resolving correctly across recursive diffs
@@ -317,7 +445,7 @@ import { LiveSocket } from "phoenix_live_view"
   - Fix live patch failing to update URL when live patch link is patched again from `handle_params`
   - Fix regression in `LiveViewTest.render_upload/3` when using channel uploads and progress callback
   - Fix component uploads not being cleaned up on remove
-  - Fix KeyError on LiveView reconnect when an active upload was previously in progress
+  - Fix `KeyError` on LiveView reconnect when an active upload was previously in progress
 
 ### Enhancements
   - Support function components via `component/3`
@@ -343,8 +471,8 @@ import { LiveSocket } from "phoenix_live_view"
   - Fix nested `live_render`'s causing remound of child LiveView even when ID does not change
   - Do not attempt push hook events unless connected
   - Fix preflighted refs causing `auto_upload: true` to fail to submit form
-  - Replace single upload entry when max_entires is 1 instead of accumulating multiple file selections
-  - Fix static_path in open_browser failing to load stylesheets
+  - Replace single upload entry when `max_entries` is 1 instead of accumulating multiple file selections
+  - Fix `static_path` in `open_browser` failing to load stylesheets
 
 ## 0.15.3 (2021-01-02)
 
@@ -354,11 +482,11 @@ import { LiveSocket } from "phoenix_live_view"
 ## 0.15.2 (2021-01-01)
 
 ### Backwards incompatible changes
-  - Remove `beforeDestroy` from phx-hook callbacks
+  - Remove `beforeDestroy` from `phx-hook` callbacks
 
 ### Bug fixes
   - Fix form recovery failing to send input on first connection failure
-  - Fix hooks not getting remounted after liveview reconnect
+  - Fix hooks not getting remounted after LiveView reconnect
   - Fix hooks `reconnected` callback being fired with no prior disconnect
 
 ## 0.15.1 (2020-12-20)
@@ -368,12 +496,12 @@ import { LiveSocket } from "phoenix_live_view"
   - Run `consume_uploaded_entries` in LiveView caller process
 
 ### Bug fixes
-  - Fix hooks not getting remounted after liveview recovery
+  - Fix hooks not getting remounted after LiveView recovery
   - Fix bug causing reload with jitter on timeout from previously closed channel
   - Fix component child nodes being lost when component patch goes from single root node to multiple child siblings
   - Fix `phx-capture-click` triggering on mouseup during text selection
   - Fix LiveView `push_event`'s not clearing up in components
-  - Fix textarea being patched by LV while focused
+  - Fix `<textarea>` being patched by LiveView while focused
 
 ## 0.15.0 (2020-11-20)
 
@@ -404,7 +532,7 @@ import { LiveSocket } from "phoenix_live_view"
 ### Bug fixes
   - Fix `redirect(socket, external: ...)` when returned from an event
   - Properly follow location hashes on live patch/redirect
-  - Fix failure in `Phoenix.LiveViewTest` when phx-update has non-HTML nodes as children
+  - Fix failure in `Phoenix.LiveViewTest` when `phx-update` has non-HTML nodes as children
   - Fix `phx_trigger_action` submitting the form before the DOM updates are complete
 
 ## 0.14.6 (2020-09-21)
@@ -447,16 +575,16 @@ import { LiveSocket } from "phoenix_live_view"
   - Fix `LiveViewTest` failing to patch children properly for append/prepend based phx-update's
   - Fix argument error when providing `:as` option to a `live` route
   - Fix page becoming unresponsive when the server crashes while handling a live patch
-  - Fix empty diff causing pending data-ref based updates, such as classes and disable-with content to not be updated
+  - Fix empty diff causing pending data-ref based updates, such as classes and `phx-disable-with` content to not be updated
   - Fix bug where throttling keydown events would eat key presses
-  - Fix textarea's failing to be disabled on form submit
-  - Fix text node DOM memory leak when using phx-update append/prepend
+  - Fix `<textarea>`'s failing to be disabled on form submit
+  - Fix text node DOM memory leak when using `phx-update` append/prepend
 
 ### Enhancements
   - Allow `:router` to be given to `render_component`
   - Display file on compile warning for `~L`
   - Log error on client when using a hook without a DOM ID
-  - Optimize phx-update append/prepend based DOM updates
+  - Optimize `phx-update` append/prepend based DOM updates
 
 ## 0.14.1 (2020-07-09)
 
@@ -469,7 +597,7 @@ import { LiveSocket } from "phoenix_live_view"
 ### Bug fixes
   - Fix IE11 issue where `document.activeElement` creates a null reference
   - Fix setup and teardown of root views when explicitly calling `liveSocket.disconnect()` followed by `liveSocket.connect()`
-  - Fix `error_tag` failing to be displayed for non-text based inputs such as selects and checkboxes as the phx-no-feedback class was always applied
+  - Fix `error_tag` failing to be displayed for non-text based inputs such as selects and checkboxes as the `phx-no-feedback` class was always applied
   - Fix `phx-error` class being applied on `live_redirect`
   - Properly handle Elixir's special variables, such as `__MODULE__`
   - No longer set disconnected class during patch
@@ -495,7 +623,7 @@ import { LiveSocket } from "phoenix_live_view"
 
 ### Bug fixes
   - Fix duplicate debounced events from being triggered on blur with timed debounce
-  - Fix client error when live_redirected'd route results in a redirect to a non-live route on the server
+  - Fix client error when `live_redirect`ed route results in a redirect to a non-live route on the server
   - Fix DOM siblings being removed when a rootless component is updated
   - Fix debounced input failing to send last change when blurred via Tab, Meta, or other non-printable keys
 
@@ -510,7 +638,7 @@ import { LiveSocket } from "phoenix_live_view"
 ## 0.13.1 (2020-05-26)
 
 ### Bug fixes
-  - Fix forced page refresh when push_redirect from a live_redirect
+  - Fix forced page refresh when `push_redirect` from a `live_redirect`
 
 ### Enhancements
   - Optimize component diffs to avoid sending empty diffs
@@ -523,7 +651,7 @@ import { LiveSocket } from "phoenix_live_view"
   - No longer send event metadata by default. Metadata is now opt-in and user defined at the `LiveSocket` level.
   To maintain backwards compatibility with pre-0.13 behaviour, you can provide the following metadata option:
 
-  ```javascript
+  ```
   let liveSocket = new LiveSocket("/live", Socket, {
     params: {_csrf_token: csrfToken},
     metadata: {
@@ -622,7 +750,7 @@ The new implementation will check there is a button at `#term .buttons a`, with 
   - `Phoenix.LiveViewTest.assert_remove/3` has been removed. If the LiveView crashes, it will cause the test to crash too
   - Passing a path with DOM IDs to `render_*` test functions is deprecated. Furthermore, they now require a `phx-target="<%= @id %>"` on the given DOM ID:
 
-    ```html
+    ```heex
     <div id="component-id" phx-target="component-id">
       ...
     </div>
@@ -839,14 +967,14 @@ The steps are:
 
   4) You should define the CSRF meta tag inside <head> in your layout, before `app.js` is included:
 
-      ```html
+      ```heex
       <%= csrf_meta_tag() %>
       <script type="text/javascript" src="<%= Routes.static_path(@conn, "/js/app.js") %>"></script>
       ```
 
   5) Then in your app.js:
 
-      ```javascript
+      ```
       let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
       let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}});
       ```
@@ -927,7 +1055,7 @@ Also note that **the session from now on will have string keys**. LiveView will 
   - All `phx-update` containers now require a unique ID
   - `LiveSocket` JavaScript constructor now requires explicit dependency injection of Phoenix Socket constructor. For example:
 
-```javascript
+```
 import {Socket} from "phoenix"
 import LiveSocket from "phoenix_live_view"
 
@@ -943,7 +1071,7 @@ let liveSocket = new LiveSocket("/live", Socket, {...})
   - Fix params failing to update on re-mounts after live_redirect
   - Fix blur event metadata being sent with type of `"focus"`
 
-## 0.1.2
+## 0.1.2 (2019-08-28)
 
 ### Backwards incompatible changes
   - `phx-value` has no effect, use `phx-value-*` instead

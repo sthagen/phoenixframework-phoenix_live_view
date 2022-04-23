@@ -2,7 +2,7 @@ import {
   PHX_COMPONENT,
   PHX_DISABLE_WITH,
   PHX_FEEDBACK_FOR,
-  PHX_REMOVE,
+  PHX_PRUNE,
   PHX_ROOT_ID,
   PHX_SESSION,
   PHX_SKIP,
@@ -44,7 +44,8 @@ export default class DOMPatch {
     this.cidPatch = isCid(this.targetCID)
     this.callbacks = {
       beforeadded: [], beforeupdated: [], beforephxChildAdded: [],
-      afteradded: [], afterupdated: [], afterdiscarded: [], afterphxChildAdded: []
+      afteradded: [], afterupdated: [], afterdiscarded: [], afterphxChildAdded: [],
+      aftertransitionsDiscarded: []
     }
   }
 
@@ -61,7 +62,7 @@ export default class DOMPatch {
 
   markPrunableContentForRemoval(){
     DOM.all(this.container, "[phx-update=append] > *, [phx-update=prepend] > *", el => {
-      el.setAttribute(PHX_REMOVE, "")
+      el.setAttribute(PHX_PRUNE, "")
     })
   }
 
@@ -76,9 +77,11 @@ export default class DOMPatch {
     let phxFeedbackFor = liveSocket.binding(PHX_FEEDBACK_FOR)
     let disableWith = liveSocket.binding(PHX_DISABLE_WITH)
     let phxTriggerExternal = liveSocket.binding(PHX_TRIGGER_ACTION)
+    let phxRemove = liveSocket.binding("remove")
     let added = []
     let updates = []
     let appendPrependUpdates = []
+    let pendingRemoves = []
     let externalFormTriggered = null
 
     let diffHTML = liveSocket.time("premorph container prep", () => {
@@ -111,19 +114,23 @@ export default class DOMPatch {
           //input handling
           DOM.discardError(targetContainer, el, phxFeedbackFor)
           // nested view handling
-          if(DOM.isPhxChild(el) && view.ownsElement(el)){
+          if((DOM.isPhxChild(el) && view.ownsElement(el)) || DOM.isPhxSticky(el) && view.ownsElement(el.parentNode)){
             this.trackAfter("phxChildAdded", el)
           }
           added.push(el)
         },
         onNodeDiscarded: (el) => {
           // nested view handling
-          if(DOM.isPhxChild(el)){ liveSocket.destroyViewByEl(el) }
+          if(DOM.isPhxChild(el) || DOM.isPhxSticky(el)){ liveSocket.destroyViewByEl(el) }
           this.trackAfter("discarded", el)
         },
         onBeforeNodeDiscarded: (el) => {
-          if(el.getAttribute && el.getAttribute(PHX_REMOVE) !== null){ return true }
+          if(el.getAttribute && el.getAttribute(PHX_PRUNE) !== null){ return true }
           if(el.parentNode !== null && DOM.isPhxUpdate(el.parentNode, phxUpdate, ["append", "prepend"]) && el.id){ return false }
+          if(el.getAttribute && el.getAttribute(phxRemove)){
+            pendingRemoves.push(el)
+            return false
+          }
           if(this.skipCIDSibling(el)){ return false }
           return true
         },
@@ -136,10 +143,12 @@ export default class DOMPatch {
         onBeforeElUpdated: (fromEl, toEl) => {
           DOM.cleanChildNodes(toEl, phxUpdate)
           if(this.skipCIDSibling(toEl)){ return false }
+          if(DOM.isPhxSticky(fromEl)){ return false }
           if(DOM.isIgnored(fromEl, phxUpdate)){
             this.trackBefore("updated", fromEl, toEl)
             DOM.mergeAttrs(fromEl, toEl, {isIgnored: true})
             updates.push(fromEl)
+            DOM.applyStickyOperations(fromEl)
             return false
           }
           if(fromEl.type === "number" && (fromEl.validity && fromEl.validity.badInput)){ return false }
@@ -148,6 +157,7 @@ export default class DOMPatch {
               this.trackBefore("updated", fromEl, toEl)
               updates.push(fromEl)
             }
+            DOM.applyStickyOperations(fromEl)
             return false
           }
 
@@ -157,26 +167,28 @@ export default class DOMPatch {
             DOM.mergeAttrs(fromEl, toEl, {exclude: [PHX_STATIC]})
             if(prevSession !== ""){ fromEl.setAttribute(PHX_SESSION, prevSession) }
             fromEl.setAttribute(PHX_ROOT_ID, this.rootID)
+            DOM.applyStickyOperations(fromEl)
             return false
           }
 
           // input handling
           DOM.copyPrivates(toEl, fromEl)
           DOM.discardError(targetContainer, toEl, phxFeedbackFor)
-          DOM.syncPropsToAttrs(toEl)
 
           let isFocusedFormEl = focused && fromEl.isSameNode(focused) && DOM.isFormInput(fromEl)
-          if(isFocusedFormEl && !this.forceFocusedSelectUpdate(fromEl, toEl)){
+          if(isFocusedFormEl){
             this.trackBefore("updated", fromEl, toEl)
             DOM.mergeFocusedInput(fromEl, toEl)
             DOM.syncAttrsToProps(fromEl)
             updates.push(fromEl)
+            DOM.applyStickyOperations(fromEl)
             return false
           } else {
             if(DOM.isPhxUpdate(toEl, phxUpdate, ["append", "prepend"])){
               appendPrependUpdates.push(new DOMPostMorphRestorer(fromEl, toEl, toEl.getAttribute(phxUpdate)))
             }
             DOM.syncAttrsToProps(toEl)
+            DOM.applyStickyOperations(toEl)
             this.trackBefore("updated", fromEl, toEl)
             return true
           }
@@ -197,16 +209,23 @@ export default class DOMPatch {
     added.forEach(el => this.trackAfter("added", el))
     updates.forEach(el => this.trackAfter("updated", el))
 
+    if(pendingRemoves.length > 0){
+      liveSocket.transitionRemoves(pendingRemoves)
+      liveSocket.requestDOMUpdate(() => {
+        pendingRemoves.forEach(el => {
+          let child = DOM.firstPhxChild(el)
+          if(child){ liveSocket.destroyViewByEl(child) }
+          el.remove()
+        })
+        this.trackAfter("transitionsDiscarded", pendingRemoves)
+      })
+    }
+
     if(externalFormTriggered){
       liveSocket.disconnect()
       externalFormTriggered.submit()
     }
     return true
-  }
-
-  forceFocusedSelectUpdate(fromEl, toEl){
-    let isSelect = ["select", "select-one", "select-multiple"].find((t) => t === fromEl.type)
-    return fromEl.multiple === true || (isSelect && fromEl.innerHTML != toEl.innerHTML)
   }
 
   isCIDPatch(){ return this.cidPatch }

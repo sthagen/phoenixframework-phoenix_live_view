@@ -297,10 +297,13 @@ defmodule Phoenix.LiveView.Engine do
 
   @doc false
   def init(_opts) do
+    # Phoenix.LiveView.HTMLEngine calls this engine in a non-linear order
+    # to evaluate slots, which can lead to variable conflicts. Therefore we
+    # use a counter to ensure all variable names are unique.
     %{
       static: [],
       dynamic: [],
-      vars_count: 0
+      counter: :counters.new(1, [])
     }
   end
 
@@ -339,10 +342,13 @@ defmodule Phoenix.LiveView.Engine do
 
   @doc false
   def handle_expr(state, "=", ast) do
-    %{static: static, dynamic: dynamic, vars_count: vars_count} = state
-    var = Macro.var(:"arg#{vars_count}", __MODULE__)
+    %{static: static, dynamic: dynamic, counter: counter} = state
+    i = :counters.get(counter, 1)
+    var = Macro.var(:"v#{i}", __MODULE__)
     ast = quote do: unquote(var) = unquote(__MODULE__).to_safe(unquote(ast))
-    %{state | dynamic: [ast | dynamic], static: [var | static], vars_count: vars_count + 1}
+
+    :counters.add(counter, 1, 1)
+    %{state | dynamic: [ast | dynamic], static: [var | static]}
   end
 
   def handle_expr(state, "", ast) do
@@ -528,7 +534,7 @@ defmodule Phoenix.LiveView.Engine do
   end
 
   defp to_conditional_var(keys, var, live_struct) when keys == %{} do
-    quote do
+    quote generated: true do
       unquote(var) =
         case changed do
           %{} -> nil
@@ -727,7 +733,7 @@ defmodule Phoenix.LiveView.Engine do
   defp slots_to_rendered(static, vars) do
     Macro.postwalk(static, fn
       {call, meta, [name, [do: block]]} = node ->
-        if extract_call(call) == :slot do
+        if extract_call(call) == :inner_block do
           {call, meta, [name, [do: maybe_block_to_rendered(block, vars)]]}
         else
           node
@@ -783,6 +789,18 @@ defmodule Phoenix.LiveView.Engine do
     {ast, keys, vars}
   end
 
+  # Expanded assign access. The non-expanded form is handled on root,
+  # then all further traversals happen on the expanded form
+  defp analyze_assign(
+         {{:., _, [{:assigns, _, nil}, name]}, _, args} = expr,
+         vars,
+         assigns,
+         nest
+       )
+       when is_atom(name) and args in [[], nil] do
+    {expr, vars, Map.put(assigns, [name | nest], true)}
+  end
+
   # Nested assign
   defp analyze_assign({{:., dot_meta, [Access, :get]}, meta, [left, right]}, vars, assigns, nest) do
     {args, vars, assigns} =
@@ -798,7 +816,8 @@ defmodule Phoenix.LiveView.Engine do
     {{{:., dot_meta, [Access, :get]}, meta, args}, vars, assigns}
   end
 
-  defp analyze_assign({{:., dot_meta, [left, right]}, meta, []}, vars, assigns, nest) do
+  defp analyze_assign({{:., dot_meta, [left, right]}, meta, args}, vars, assigns, nest)
+       when args in [[], nil] do
     {left, vars, assigns} = analyze_assign(left, vars, assigns, [{:struct, right} | nest])
     {{{:., dot_meta, [left, right]}, meta, []}, vars, assigns}
   end
@@ -806,23 +825,7 @@ defmodule Phoenix.LiveView.Engine do
   # Non-expanded assign
   defp analyze_assign({:@, meta, [{name, _, context}]}, vars, assigns, nest)
        when is_atom(name) and is_atom(context) do
-    expr =
-      quote line: meta[:line] || 0 do
-        unquote(__MODULE__).fetch_assign!(unquote(@assigns_var), unquote(name))
-      end
-
-    {expr, vars, Map.put(assigns, [name | nest], true)}
-  end
-
-  # Expanded assign access. The non-expanded form is handled on root,
-  # then all further traversals happen on the expanded form
-  defp analyze_assign(
-         {{:., _, [__MODULE__, :fetch_assign!]}, _, [{:assigns, _, nil}, name]} = expr,
-         vars,
-         assigns,
-         nest
-       )
-       when is_atom(name) do
+    expr = {{:., meta, [@assigns_var, name]}, [no_parens: true] ++ meta, []}
     {expr, vars, Map.put(assigns, [name | nest], true)}
   end
 
@@ -835,21 +838,12 @@ defmodule Phoenix.LiveView.Engine do
     analyze_assign(expr, vars, assigns, [])
   end
 
-  defp analyze({{:., _, [_, _]}, _, []} = expr, vars, assigns) do
+  defp analyze({{:., _, [_, _]}, _, args} = expr, vars, assigns) when args in [[], nil] do
     analyze_assign(expr, vars, assigns, [])
   end
 
   defp analyze({:@, _, [{name, _, context}]} = expr, vars, assigns)
        when is_atom(name) and is_atom(context) do
-    analyze_assign(expr, vars, assigns, [])
-  end
-
-  defp analyze(
-         {{:., _, [__MODULE__, :fetch_assign!]}, _, [{:assigns, _, nil}, name]} = expr,
-         vars,
-         assigns
-       )
-       when is_atom(name) do
     analyze_assign(expr, vars, assigns, [])
   end
 
@@ -895,16 +889,25 @@ defmodule Phoenix.LiveView.Engine do
     {{:"::", meta, [left, right]}, vars, assigns}
   end
 
+  # Handle for/with to consider the first generator.
+  # Ideally we would track all variables on the patterns and expand all generators
+  # but except for the unlikely scenario of combinations, all comprehensions will
+  # be using nested generators.
+  defp analyze({for_with, meta, [{:<-, arrow_meta, [left, right]} | args]}, vars, assigns)
+       when for_with in [:for, :with] do
+    {right, vars, assigns} = analyze(right, vars, assigns)
+    {[left | args], vars, assigns} = analyze_with_restricted_vars([left | args], vars, assigns)
+    {{for_with, meta, [{:<-, arrow_meta, [left, right]} | args]}, vars, assigns}
+  end
+
   # Classify calls
-  defp analyze({left, meta, args} = expr, vars, assigns) do
+  defp analyze({left, meta, args}, vars, assigns) do
     call = extract_call(left)
 
     case classify_taint(call, args) do
-      :always ->
-        case vars do
-          {:restricted, _} -> {expr, vars, assigns}
-          {_, map} -> {expr, {:tainted, map}, assigns}
-        end
+      :special_form ->
+        code = quote do: unquote(__MODULE__).__raise__(unquote(call), unquote(length(args)))
+        {code, vars, assigns}
 
       :render ->
         {args, [opts]} = Enum.split(args, -1)
@@ -986,6 +989,12 @@ defmodule Phoenix.LiveView.Engine do
   end
 
   @doc false
+  defmacro __raise__(special_form, arity) do
+    message =  "cannot invoke special form #{special_form}/#{arity} inside HEEx templates"
+    reraise ArgumentError.exception(message), Macro.Env.stacktrace(__CALLER__)
+  end
+
+  @doc false
   defmacro to_safe(ast) do
     to_safe(ast, false)
   end
@@ -1010,7 +1019,7 @@ defmodule Phoenix.LiveView.Engine do
 
   # Calls to attributes escape is always safe
   defp to_safe(
-         {{:., _, [{:__aliases__, _, [:Phoenix, :HTML, :Tag]}, :attributes_escape]}, _, [_]} =
+         {{:., _, [{:__aliases__, _, [:Phoenix, :HTML]}, :attributes_escape]}, _, [_]} =
            safe,
          line,
          _extra_clauses?
@@ -1050,7 +1059,13 @@ defmodule Phoenix.LiveView.Engine do
   end
 
   @doc false
-  def changed_assign?(changed, name), do: changed_assign(changed, name) != false
+  def changed_assign?(changed, name) do
+    case changed do
+      %{^name => _} -> true
+      %{} -> false
+      nil -> true
+    end
+  end
 
   defp changed_assign(changed, name) do
     case changed do
@@ -1110,43 +1125,6 @@ defmodule Phoenix.LiveView.Engine do
     end
   end
 
-  @doc false
-  def fetch_assign!(assigns, key) do
-    case assigns do
-      %{^key => val} ->
-        val
-
-      %{} when key == :inner_block ->
-        raise ArgumentError, """
-        assign @#{key} not available in template.
-
-        This means a component requires a do-block or HTML children to
-        be given as argument but none were given. For example, instead of:
-
-            <.component />
-
-        You must do:
-
-            <.component>
-              more content
-            </.component>
-
-        Available assigns: #{inspect(Enum.map(assigns, &elem(&1, 0)))}
-        """
-
-      %{} ->
-        raise ArgumentError, """
-        assign @#{key} not available in template.
-
-        Please make sure all proper assigns have been set. If you are
-        calling a component, make sure you are passing all required
-        assigns as arguments.
-
-        Available assigns: #{inspect(Enum.map(assigns, &elem(&1, 0)))}
-        """
-    end
-  end
-
   # For case/if/unless, we are not leaking the variable given as argument,
   # such as `if var = ... do`. This does not follow Elixir semantics, but
   # yields better optimizations.
@@ -1161,19 +1139,19 @@ defmodule Phoenix.LiveView.Engine do
   # TODO: Remove me when live_component/2/3 are removed
   defp classify_taint(:live_component, [_, [do: _]]), do: :render
   defp classify_taint(:live_component, [_, _, [do: _]]), do: :render
-  defp classify_taint(:slot, [_, [do: _]]), do: :render
+  defp classify_taint(:inner_block, [_, [do: _]]), do: :render
   defp classify_taint(:render_layout, [_, _, _, [do: _]]), do: :render
 
-  defp classify_taint(:alias, [_]), do: :always
-  defp classify_taint(:import, [_]), do: :always
-  defp classify_taint(:require, [_]), do: :always
-  defp classify_taint(:alias, [_, _]), do: :always
-  defp classify_taint(:import, [_, _]), do: :always
-  defp classify_taint(:require, [_, _]), do: :always
+  defp classify_taint(:alias, [_]), do: :special_form
+  defp classify_taint(:import, [_]), do: :special_form
+  defp classify_taint(:require, [_]), do: :special_form
+  defp classify_taint(:alias, [_, _]), do: :special_form
+  defp classify_taint(:import, [_, _]), do: :special_form
+  defp classify_taint(:require, [_, _]), do: :special_form
 
   defp classify_taint(:&, [_]), do: :never
-  defp classify_taint(:for, _), do: :never
   defp classify_taint(:fn, _), do: :never
+  defp classify_taint(:for, _), do: :never
 
   defp classify_taint(_, _), do: :none
 end

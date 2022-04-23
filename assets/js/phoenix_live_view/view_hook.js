@@ -5,7 +5,7 @@ export default class ViewHook {
 
   constructor(view, el, callbacks){
     this.__view = view
-    this.__liveSocket = view.liveSocket
+    this.liveSocket = view.liveSocket
     this.__callbacks = callbacks
     this.__listeners = new Set()
     this.__isDisconnected = false
@@ -41,14 +41,14 @@ export default class ViewHook {
 
   handleEvent(event, callback){
     let callbackRef = (customEvent, bypass) => bypass ? event : callback(customEvent.detail)
-    window.addEventListener(`phx:hook:${event}`, callbackRef)
+    window.addEventListener(`phx:${event}`, callbackRef)
     this.__listeners.add(callbackRef)
     return callbackRef
   }
 
   removeHandleEvent(callbackRef){
     let event = callbackRef(null, true)
-    window.removeEventListener(`phx:hook:${event}`, callbackRef)
+    window.removeEventListener(`phx:${event}`, callbackRef)
     this.__listeners.delete(callbackRef)
   }
 

@@ -15,7 +15,9 @@ You can trigger live navigation in two ways:
 
 For example, in a template you may write:
 
-    <%= live_patch "next", to: Routes.live_path(@socket, MyLive, @page + 1) %>
+```heex
+<%= live_patch "next", to: Routes.live_path(@socket, MyLive, @page + 1) %>
+```
 
 or in a LiveView:
 
@@ -32,7 +34,7 @@ The "redirect" operations must be used when you want to dismount the
 current LiveView and mount a new one. In those cases, an Ajax request
 is made to fetch the necessary information about the new LiveView,
 which is mounted in place of the current one within the current layout.
-While redirecting, a `phx-disconnected` class is added to the LiveView,
+While redirecting, a `phx-loading` class is added to the LiveView,
 which can be used to indicate to the user a new page is being loaded.
 
 At the end of the day, regardless if you invoke [`link/2`](`Phoenix.HTML.Link.link/2`),
@@ -78,7 +80,9 @@ the system and you define it in the router as:
 
 Now to add live sorting, you could do:
 
-    <%= live_patch "Sort by name", to: Routes.live_path(@socket, UserTable, %{sort_by: "name"}) %>
+```heex
+<%= live_patch "Sort by name", to: Routes.live_path(@socket, UserTable, %{sort_by: "name"}) %>
+```
 
 When clicked, since we are navigating to the current LiveView,
 [`handle_params/3`](`c:Phoenix.LiveView.handle_params/3`) will be invoked.
@@ -88,15 +92,18 @@ validate the user input and change the state accordingly:
     def handle_params(params, _uri, socket) do
       socket =
         case params["sort_by"] do
-          sort_by when sort_by in ~w(name company) -> assign(socket, sort_by: sort)
+          sort_by when sort_by in ~w(name company) -> assign(socket, sort_by: sort_by)
           _ -> socket
         end
 
       {:noreply, load_users(socket)}
     end
 
-As with other `handle_*` callbacks, changes to the state inside
-[`handle_params/3`](`c:Phoenix.LiveView.handle_params/3`) will trigger a server render.
+Note we returned `{:noreply, socket}`, where `:noreply` means no
+additional information is sent to the client. As with other `handle_*`
+callbacks, changes to the state inside
+[`handle_params/3`](`c:Phoenix.LiveView.handle_params/3`) will trigger
+a new server render.
 
 Note the parameters given to [`handle_params/3`](`c:Phoenix.LiveView.handle_params/3`)
 are the same as the ones given to [`mount/3`](`c:Phoenix.LiveView.mount/3`).

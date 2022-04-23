@@ -1,5 +1,5 @@
 defmodule Phoenix.LiveViewTest do
-  @moduledoc """
+  @moduledoc ~S'''
   Conveniences for testing Phoenix LiveViews.
 
   In LiveView tests, we interact with views via process
@@ -48,7 +48,7 @@ defmodule Phoenix.LiveViewTest do
         assert html =~ "<h1>My Connected View</h1>"
       end
 
-  ## Testing Events
+  ### Testing Events
 
   The browser can send a variety of events to a LiveView via `phx-` bindings,
   which are sent to the `handle_event/3` callback. To test events sent by the
@@ -100,7 +100,7 @@ defmodule Phoenix.LiveViewTest do
   perform validations and ensure the events in the HTML actually matches the
   event names on the server.
 
-  ## Testing regular messages
+  ### Testing regular messages
 
   LiveViews are `GenServer`'s under the hood, and can send and receive messages
   just like any other server. To test the side effects of sending or receiving
@@ -110,17 +110,55 @@ defmodule Phoenix.LiveViewTest do
       send(view.pid, {:set_temp, 50})
       assert render(view) =~ "The temperature is: 50℉"
 
-  ## Testing components
+  ## Testing function components
 
-  There are two main mechanisms for testing components. To test stateless
-  components or just a regular rendering of a component, one can use
-  `render_component/2`:
+  There are two mechanisms for testing function components. Imagine the
+  following component:
+
+      def greet(assigns) do
+        ~H"""
+        <div>Hello, <%= @name %>!</div>
+        """
+      end
+
+  You can test it by using `render_component/3`, passing the function
+  reference to the component as first argument:
+
+      import Phoenix.LiveViewTest
+
+      test "greets" do
+        assert render_component(&MyComponents.greet/1, name: "Mary") ==
+                 "<div>Hello, Mary!</div>"
+      end
+
+  However, for complex components, often the simplest way to test them
+  is by using the `~H` sigil itself:
+
+      import Phoenix.LiveView.Helpers
+      import Phoenix.LiveViewTest
+
+      test "greets" do
+        assigns = []
+        assert rendered_to_string(~H"""
+               <MyComponents.greet name="Mary" />
+               """) ==
+                 "<div>Hello, Mary!</div>"
+      end
+
+  The difference is that we use `rendered_to_string` to convert the rendered
+  template to a string for testing.
+
+  ## Testing stateful components
+
+  There are two main mechanisms for testing stateful components. You can
+  use `render_component/2` to test how a component is mounted and rendered
+  once:
 
       assert render_component(MyComponent, id: 123, user: %User{}) =~
                "some markup in component"
 
-  If you want to test how components are mounted by a LiveView and
-  interact with DOM events, you can use the regular `live/2` macro
+  However, if you want to test how components are mounted by a LiveView
+  and interact with DOM events, you must use the regular `live/2` macro
   to build the LiveView with the component and then scope events by
   passing the view and a **DOM selector** in a list:
 
@@ -133,7 +171,7 @@ defmodule Phoenix.LiveViewTest do
   ID=user-13 and retrieve its `phx-target`. If `phx-target` points
   to a component, that will be the component used, otherwise it will
   fallback to the view.
-  """
+  '''
 
   @flash_cookie "__phoenix_flash__"
 
@@ -152,11 +190,7 @@ defmodule Phoenix.LiveViewTest do
     Plug.Conn.put_private(conn, :live_view_connect_params, params)
   end
 
-  @doc """
-  Puts connect info to be used on LiveView connections.
-
-  See `Phoenix.LiveView.get_connect_info/1`.
-  """
+  @deprecated "set the relevant connect_info fields in the connection instead"
   def put_connect_info(conn, params) when is_map(params) do
     Plug.Conn.put_private(conn, :live_view_connect_info, params)
   end
@@ -173,7 +207,7 @@ defmodule Phoenix.LiveViewTest do
   ## Examples
 
       {:ok, view, html} = live(conn, "/path")
-      assert view.module = MyLive
+      assert view.module == MyLive
       assert html =~ "the count is 3"
 
       assert {:error, {:redirect, %{to: "/somewhere"}}} = live(conn, "/path")
@@ -213,7 +247,7 @@ defmodule Phoenix.LiveViewTest do
   ## Examples
 
       {:ok, view, html} =
-        live_isolated(conn, AppWeb.ClockLive, session: %{"tz" => "EST"})
+        live_isolated(conn, MyAppWeb.ClockLive, session: %{"tz" => "EST"})
 
   Use `put_connect_params/2` to put connect params for a call to
   `Phoenix.LiveView.get_connect_params/1` in `c:Phoenix.LiveView.mount/3`:
@@ -298,7 +332,7 @@ defmodule Phoenix.LiveViewTest do
     start_proxy(path, %{
       html: Phoenix.ConnTest.html_response(conn, 200),
       connect_params: conn.private[:live_view_connect_params] || %{},
-      connect_info: conn.private[:live_view_connect_info] || %{},
+      connect_info: conn.private[:live_view_connect_info] || prune_conn(conn) || %{},
       live_module: live_module,
       router: router,
       endpoint: Phoenix.Controller.endpoint_module(conn),
@@ -316,13 +350,16 @@ defmodule Phoenix.LiveViewTest do
     error_redirect_conn(conn)
   end
 
+  defp prune_conn(conn) do
+    %{conn | resp_body: nil, resp_headers: []}
+  end
+
   defp error_redirect_conn(conn) do
     to = hd(Plug.Conn.get_resp_header(conn, "location"))
 
     opts =
       if flash = conn.private[:phoenix_flash] do
-        endpoint = Phoenix.Controller.endpoint_module(conn)
-        %{to: to, flash: Phoenix.LiveView.Utils.sign_flash(endpoint, flash)}
+        %{to: to, flash: flash}
       else
         %{to: to}
       end
@@ -418,7 +455,7 @@ defmodule Phoenix.LiveViewTest do
                "some markup in component"
 
   """
-  defmacro render_component(component, assigns, opts \\ []) do
+  defmacro render_component(component, assigns \\ Macro.escape(%{}), opts \\ []) do
     endpoint = Module.get_attribute(__CALLER__.module, :endpoint)
 
     quote do
@@ -436,14 +473,17 @@ defmodule Phoenix.LiveViewTest do
   @doc false
   def __render_component__(endpoint, %{module: component}, assigns, opts) do
     socket = %Socket{endpoint: endpoint, router: opts[:router]}
-    assigns = Map.new(assigns)
+
+    assigns =
+      Map.new(assigns)
+      |> Map.put_new(:__changed__, %{})
 
     # TODO: Make the ID required once we support only stateful module components as live_component
     mount_assigns = if assigns[:id], do: %{myself: %Phoenix.LiveComponent.CID{cid: -1}}, else: %{}
 
     socket
     |> Diff.component_to_rendered(component, assigns, mount_assigns)
-    |> rendered_to_iodata(socket)
+    |> rendered_to_diff_string(socket)
   end
 
   def __render_component__(endpoint, function, assigns, opts) when is_function(function, 1) do
@@ -451,13 +491,34 @@ defmodule Phoenix.LiveViewTest do
 
     assigns
     |> Map.new()
+    |> Map.put_new(:__changed__, %{})
     |> function.()
-    |> rendered_to_iodata(socket)
+    |> rendered_to_diff_string(socket)
   end
 
-  defp rendered_to_iodata(rendered, socket) do
+  defp rendered_to_diff_string(rendered, socket) do
     {_, diff, _} = Diff.render(socket, rendered, Diff.new_components())
     diff |> Diff.to_iodata() |> IO.iodata_to_binary()
+  end
+
+  @doc ~S'''
+  Converts a rendered template to a string.
+
+  ## Examples
+      
+      iex> import Phoenix.LiveView.Helpers
+      iex> assigns = []
+      iex> ~H"""
+      ...> <div>example</div>
+      ...> """
+      ...> |> rendered_to_string()
+      "<div>example</div>"
+
+  '''
+  def rendered_to_string(rendered) do
+    rendered
+    |> Phoenix.HTML.html_escape()
+    |> Phoenix.HTML.safe_to_string()
   end
 
   @doc """
@@ -489,7 +550,7 @@ defmodule Phoenix.LiveViewTest do
       {:ok, view, html} = live(conn, "/thermo")
 
       assert view
-             |> element("buttons", "Increment")
+             |> element("button", "Increment")
              |> render_click() =~ "The temperature is: 30℉"
   """
   def render_click(element, value \\ %{})
@@ -964,15 +1025,23 @@ defmodule Phoenix.LiveViewTest do
 
   An optional text filter may be given to filter the results by the query
   selector. If the text filter is a string or a regex, it will match any
-  element that contains the string or matches the regex. After the text
-  filter is applied, only one element must remain, otherwise an error is
-  raised.
+  element that contains the string (including as a substring) or matches the
+  regex.
+
+  So a link containing the text "unopened" will match `element("a", "opened")`.
+  To prevent this, a regex could specify that "opened" appear without the prefix "un".
+  For example, `element("a", ~r{(?<!un)opened})`.
+  But it may be clearer to add an HTML attribute to make the element easier to
+  select.
+
+  After the text filter is applied, only one element must remain, otherwise an
+  error is raised.
 
   If no text filter is given, then the query selector itself must return
   a single element.
 
       assert view
-            |> element("#term a:first-child()", "Increment")
+            |> element("#term a:first-child", "Increment")
             |> render() =~ "Increment</a>"
 
   Attribute selectors are also supported, and may be used on special cases
@@ -1071,24 +1140,15 @@ defmodule Phoenix.LiveViewTest do
     end
   end
 
-  defp start_upload_client(socket_builder, view, form_selector, name, entries, cid) do
-    spec = %{
-      id: make_ref(),
-      start: {UploadClient, :start_link, [[socket_builder: socket_builder, cid: cid]]},
-      restart: :temporary
-    }
-
+  defp start_upload_client(builder, view, form_selector, name, entries, cid) do
+    {:ok, socket} = builder.()
+    spec = {UploadClient, socket: socket, cid: cid}
     {:ok, pid} = Supervisor.start_child(fetch_test_supervisor!(), spec)
     Upload.new(pid, view, form_selector, name, entries, cid)
   end
 
   defp start_external_upload_client(view, form_selector, name, entries, cid) do
-    spec = %{
-      id: make_ref(),
-      start: {UploadClient, :start_link, [[cid: cid]]},
-      restart: :temporary
-    }
-
+    spec = {UploadClient, cid: cid}
     {:ok, pid} = Supervisor.start_child(fetch_test_supervisor!(), spec)
     Upload.new(pid, view, form_selector, name, entries, cid)
   end
@@ -1137,8 +1197,8 @@ defmodule Phoenix.LiveViewTest do
   def assert_patch(view, to) when is_binary(to), do: assert_patch(view, to, 100)
 
   @doc """
-  Asserts a live patch will to a given path within `timeout` milliseconds. The
-  default `timeout` is 100.
+  Asserts a live patch will happen to a given path within `timeout`
+  milliseconds. The default `timeout` is 100.
 
   It always returns `:ok`.
 
@@ -1225,13 +1285,13 @@ defmodule Phoenix.LiveViewTest do
   @doc """
   Asserts a redirect was performed.
 
-  It returns a tuple containing the new path and the flash messages
-  from said redirect, if any. Note the flash will contain string keys.
+  It returns the flash messages from said redirect, if any. Note the
+  flash will contain string keys.
 
   ## Examples
 
       render_click(view, :event_that_triggers_redirect)
-      {_path, flash} = assert_redirected view, "/path"
+      flash = assert_redirected view, "/path"
       assert flash["info"] == "Welcome"
 
   """
@@ -1269,7 +1329,7 @@ defmodule Phoenix.LiveViewTest do
   ## Examples
 
       render_click(view, :event_that_triggers_redirect_to_path)
-      :ok = refute_redirect view, "/wrong_path"
+      :ok = refute_redirected view, "/wrong_path"
   """
   def refute_redirected(view, to) when is_binary(to) do
     refute_navigation(view, :redirect, to)
@@ -1306,7 +1366,7 @@ defmodule Phoenix.LiveViewTest do
   ## Examples
 
       view
-      |> element("#term a:first-child()", "Increment")
+      |> element("#term a:first-child", "Increment")
       |> open_browser()
 
       assert view
@@ -1469,11 +1529,11 @@ defmodule Phoenix.LiveViewTest do
     quote bind_quoted: binding() do
       case reason do
         {:error, {:live_redirect, opts}} ->
-          {conn, to} = Phoenix.LiveViewTest.__follow_redirect__(conn, to, opts)
+          {conn, to} = Phoenix.LiveViewTest.__follow_redirect__(conn, @endpoint, to, opts)
           live(conn, to)
 
         {:error, {:redirect, opts}} ->
-          {conn, to} = Phoenix.LiveViewTest.__follow_redirect__(conn, to, opts)
+          {conn, to} = Phoenix.LiveViewTest.__follow_redirect__(conn, @endpoint, to, opts)
           {:ok, get(conn, to)}
 
         _ ->
@@ -1483,7 +1543,7 @@ defmodule Phoenix.LiveViewTest do
   end
 
   @doc false
-  def __follow_redirect__(conn, expected_to, %{to: to} = opts) do
+  def __follow_redirect__(conn, endpoint, expected_to, %{to: to} = opts) do
     if expected_to && expected_to != to do
       raise ArgumentError,
             "expected LiveView to redirect to #{inspect(expected_to)}, but got #{inspect(to)}"
@@ -1492,11 +1552,18 @@ defmodule Phoenix.LiveViewTest do
     conn = Phoenix.ConnTest.ensure_recycled(conn)
 
     if flash = opts[:flash] do
-      {Phoenix.ConnTest.put_req_cookie(conn, @flash_cookie, flash), to}
+      {Phoenix.ConnTest.put_req_cookie(conn, @flash_cookie, ensure_signed_flash(endpoint, flash)),
+       to}
     else
       {conn, to}
     end
   end
+
+  defp ensure_signed_flash(endpoint, flash) when is_map(flash) do
+    Phoenix.LiveView.Utils.sign_flash(endpoint, flash)
+  end
+
+  defp ensure_signed_flash(_, flash), do: flash
 
   @doc """
   Performs a live redirect from one LiveView to another.

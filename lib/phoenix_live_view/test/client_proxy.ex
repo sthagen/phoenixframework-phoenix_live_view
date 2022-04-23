@@ -310,15 +310,28 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
 
           with {:ok, node} <- select_node(root, element),
                :ok <- maybe_enabled(type, node, element),
-               {:ok, event} <- maybe_event(type, node, element),
+               {:ok, event_or_js} <- maybe_event(type, node, element),
                {:ok, extra} <- maybe_values(type, node, element) do
+            {event, js_values, js_target_selector} = maybe_js_event(event_or_js)
+            extra = Map.merge(extra, js_values)
+
             {values, uploads} =
               case value do
                 %Upload{} = upload -> {extra, upload}
                 other -> {DOM.deep_merge(extra, stringify(other, & &1)), nil}
               end
 
-            {view, DOM.targets_from_node(root, node), event, values, uploads}
+            js_targets = DOM.targets_from_selector(root, js_target_selector)
+            node_targets = DOM.targets_from_node(root, node)
+
+            targets =
+              case {js_targets, node_targets} do
+                {[nil], right} -> right
+                {left, [nil]} -> left
+                {left, right} -> Enum.uniq(left ++ right)
+              end
+
+            {view, targets, event, values, uploads}
           end
       end
 
@@ -537,7 +550,7 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
 
   defp drop_view_by_id(state, id, reason) do
     {:ok, view} = fetch_view_by_id(state, id)
-    push(state, view, "phx_leave", %{})
+    state = push(state, view, "phx_leave", %{})
 
     state =
       Enum.reduce(view.children, state, fn {child_id, _child_session}, acc ->
@@ -755,17 +768,19 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
   end
 
   defp push(state, view, event, payload) do
-    ref = to_string(state.ref + 1)
+    ref = state.ref + 1
 
-    send(view.pid, %Phoenix.Socket.Message{
+    message = %Phoenix.Socket.Message{
       join_ref: state.join_ref,
       topic: view.topic,
       event: event,
       payload: payload,
-      ref: ref
-    })
+      ref: to_string(ref)
+    }
 
-    %{state | ref: state.ref + 1}
+    send(view.pid, message)
+
+    %{state | ref: ref}
   end
 
   defp push_with_reply(state, from, view, event, payload) do
@@ -964,6 +979,25 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
     end
   end
 
+  defp maybe_js_event("[" <> _ = encoded_js) do
+    js = encoded_js |> DOM.parse() |> Phoenix.json_library().decode!()
+    op = Enum.filter(js, fn [kind, _args] -> kind == "push" end)
+
+    case op do
+      [] ->
+        raise ArgumentError, "no push command found within JS commands: #{inspect(js)}"
+
+      [["push", %{"event" => event} = args]] ->
+        {event, args["value"] || %{}, args["target"]}
+
+      [_ | _] ->
+        raise ArgumentError,
+              "Phoenix.LiveViewTest currently only supports a single push within JS commands"
+    end
+  end
+
+  defp maybe_js_event(event), do: {event, _values = %{}, _target = nil}
+
   defp maybe_enabled(_type, {tag, _, _}, %{form_data: form_data})
        when tag != "form" and form_data != nil do
     {:error, :invalid,
@@ -982,20 +1016,25 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
   defp maybe_values(:hook, _node, _element), do: {:ok, %{}}
 
   defp maybe_values(type, {tag, _, _} = node, element) when type in [:change, :submit] do
-    if tag == "form" do
-      defaults =
-        node
-        |> DOM.reverse_filter(fn node ->
-          DOM.tag(node) in ~w(input textarea select) and is_nil(DOM.attribute(node, "disabled"))
-        end)
-        |> Enum.reduce(%{}, &form_defaults/2)
+    cond do
+      tag == "form" ->
+        defaults =
+          node
+          |> DOM.reverse_filter(fn node ->
+            DOM.tag(node) in ~w(input textarea select) and is_nil(DOM.attribute(node, "disabled"))
+          end)
+          |> Enum.reduce(%{}, &form_defaults/2)
 
-      case fill_in_map(Enum.to_list(element.form_data || %{}), "", node, []) do
-        {:ok, value} -> {:ok, DOM.deep_merge(defaults, value)}
-        {:error, _, _} = error -> error
-      end
-    else
-      {:error, :invalid, "phx-#{type} is only allowed in forms, got #{inspect(tag)}"}
+        case fill_in_map(Enum.to_list(element.form_data || %{}), "", node, []) do
+          {:ok, value} -> {:ok, DOM.deep_merge(defaults, value)}
+          {:error, _, _} = error -> error
+        end
+
+      type == :change and tag in ~w(input select textarea) ->
+        {:ok, form_defaults(node, %{})}
+
+      true ->
+        {:error, :invalid, "phx-#{type} is only allowed in forms, got #{inspect(tag)}"}
     end
   end
 

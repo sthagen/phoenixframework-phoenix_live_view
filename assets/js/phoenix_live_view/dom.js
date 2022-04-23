@@ -12,15 +12,17 @@ import {
   PHX_PARENT_ID,
   PHX_PRIVATE,
   PHX_REF,
+  PHX_REF_SRC,
+  PHX_ROOT_ID,
   PHX_SESSION,
   PHX_STATIC,
   PHX_UPLOAD_REF,
   PHX_VIEW_SELECTOR,
+  PHX_STICKY,
   THROTTLED
 } from "./constants"
 
 import {
-  clone,
   logError
 } from "./utils"
 
@@ -57,7 +59,7 @@ let DOM = {
   },
 
   markPhxChildDestroyed(el){
-    el.setAttribute(PHX_SESSION, "")
+    if(this.isPhxChild(el)){ el.setAttribute(PHX_SESSION, "") }
     this.putPrivate(el, "destroyed", true)
   },
 
@@ -74,6 +76,8 @@ let DOM = {
   isPhxUpdate(el, phxUpdate, updateTypes){
     return el.getAttribute && updateTypes.indexOf(el.getAttribute(phxUpdate)) >= 0
   },
+
+  findPhxSticky(el){ return this.all(el, `[${PHX_STICKY}]`) },
 
   findPhxChildren(el, parentId){
     return this.all(el, `${PHX_VIEW_SELECTOR}[${PHX_PARENT_ID}="${parentId}"]`)
@@ -116,9 +120,18 @@ let DOM = {
     el[PHX_PRIVATE][key] = value
   },
 
+  updatePrivate(el, key, defaultVal, updateFunc){
+    let existing = this.private(el, key)
+    if(existing === undefined){
+      this.putPrivate(el, key, updateFunc(defaultVal))
+    } else {
+      this.putPrivate(el, key, updateFunc(existing))
+    }
+  },
+
   copyPrivates(target, source){
     if(source[PHX_PRIVATE]){
-      target[PHX_PRIVATE] = clone(source[PHX_PRIVATE])
+      target[PHX_PRIVATE] = source[PHX_PRIVATE]
     }
   },
 
@@ -229,8 +242,18 @@ let DOM = {
     return node.getAttribute && node.getAttribute(PHX_PARENT_ID)
   },
 
-  dispatchEvent(target, eventString, detail = {}){
-    let event = new CustomEvent(eventString, {bubbles: true, cancelable: true, detail: detail})
+  isPhxSticky(node){
+    return node.getAttribute && node.getAttribute(PHX_STICKY) !== null
+  },
+
+  firstPhxChild(el){
+    return this.isPhxChild(el) ? el : this.all(el, `[${PHX_PARENT_ID}]`)[0]
+  },
+
+  dispatchEvent(target, name, opts = {}){
+    let bubbles = opts.bubbles === undefined ? true : !!opts.bubbles
+    let eventOpts = {bubbles: bubbles, cancelable: true, detail: opts.detail || {}}
+    let event = name === "click" ? new MouseEvent("click", eventOpts) : new CustomEvent(name, eventOpts)
     target.dispatchEvent(event)
   },
 
@@ -266,7 +289,7 @@ let DOM = {
 
   mergeFocusedInput(target, source){
     // skip selects because FF will reset highlighted index for any setAttribute
-    if(!(target instanceof HTMLSelectElement)){ DOM.mergeAttrs(target, source, {except: ["value"]}) }
+    if(!(target instanceof HTMLSelectElement)){ DOM.mergeAttrs(target, source, {exclude: ["value"]}) }
     if(source.readOnly){
       target.setAttribute("readonly", true)
     } else {
@@ -296,15 +319,6 @@ let DOM = {
     }
   },
 
-  syncPropsToAttrs(el){
-    if(el instanceof HTMLSelectElement){
-      let selectedItem = el.options.item(el.selectedIndex)
-      if(selectedItem && selectedItem.getAttribute("selected") === null){
-        selectedItem.setAttribute("selected", "")
-      }
-    }
-  },
-
   isTextualInput(el){ return FOCUSABLE_INPUTS.indexOf(el.type) >= 0 },
 
   isNowTriggerFormExternal(el, phxTriggerExternal){
@@ -314,6 +328,7 @@ let DOM = {
   syncPendingRef(fromEl, toEl, disableWith){
     let ref = fromEl.getAttribute(PHX_REF)
     if(ref === null){ return true }
+    let refSrc = fromEl.getAttribute(PHX_REF_SRC)
 
     if(DOM.isFormInput(fromEl) || fromEl.getAttribute(disableWith) !== null){
       if(DOM.isUploadInput(fromEl)){ DOM.mergeAttrs(fromEl, toEl, {isIgnored: true}) }
@@ -324,6 +339,7 @@ let DOM = {
         fromEl.classList.contains(className) && toEl.classList.add(className)
       })
       toEl.setAttribute(PHX_REF, ref)
+      toEl.setAttribute(PHX_REF_SRC, refSrc)
       return true
     }
   },
@@ -347,7 +363,7 @@ let DOM = {
   },
 
   replaceRootContainer(container, tagName, attrs){
-    let retainedAttrs = new Set(["id", PHX_SESSION, PHX_STATIC, PHX_MAIN])
+    let retainedAttrs = new Set(["id", PHX_SESSION, PHX_STATIC, PHX_MAIN, PHX_ROOT_ID])
     if(container.tagName.toLowerCase() === tagName.toLowerCase()){
       Array.from(container.attributes)
         .filter(attr => !retainedAttrs.has(attr.name.toLowerCase()))
@@ -367,6 +383,42 @@ let DOM = {
       container.replaceWith(newContainer)
       return newContainer
     }
+  },
+
+  getSticky(el, name, defaultVal){
+    let op = (DOM.private(el, "sticky") || []).find(([existingName, ]) => name === existingName)
+    if(op){
+      let [_name, _op, stashedResult] = op
+      return stashedResult
+    } else {
+      return typeof(defaultVal) === "function" ? defaultVal() : defaultVal
+    }
+  },
+
+  deleteSticky(el, name){
+    this.updatePrivate(el, "sticky", [], ops => {
+      return ops.filter(([existingName, _]) => existingName !== name)
+    })
+  },
+
+  putSticky(el, name, op){
+    let stashedResult = op(el)
+    this.updatePrivate(el, "sticky", [], ops => {
+      let existingIndex = ops.findIndex(([existingName, ]) => name === existingName)
+      if(existingIndex >= 0){
+        ops[existingIndex] = [name, op, stashedResult]
+      } else {
+        ops.push([name, op, stashedResult])
+      }
+      return ops
+    })
+  },
+
+  applyStickyOperations(el){
+    let ops = DOM.private(el, "sticky")
+    if(!ops){ return }
+
+    ops.forEach(([name, op, _stashed]) => this.putSticky(el, name, op))
   }
 }
 

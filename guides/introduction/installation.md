@@ -1,8 +1,18 @@
 # Installation
 
-**Note:** Phoenix v1.5 comes with built-in support for LiveView apps. Just create
-your application with `mix phx.new my_app --live`. If you are using earlier Phoenix
-versions or your app already exists, keep on reading.
+## New projects
+
+Phoenix v1.5+ comes with built-in support for LiveView apps. Just create
+your application with `mix phx.new my_app --live`. The `--live` flag has
+become the default on Phoenix v1.6.
+
+Once you've created a LiveView project, refer to [LiveView documentation](`Phoenix.LiveView`)
+for further information on how to use it.
+
+## Existing projects
+
+If you are using a Phoenix version earlier than v1.5 or your app already exists, continue
+with the following steps.
 
 The instructions below will serve if you are installing the latest stable version
 from Hex. To start using LiveView, add one of the following dependencies to your `mix.exs`
@@ -13,7 +23,7 @@ If installing from Hex, use the latest version from there:
 ```elixir
 def deps do
   [
-    {:phoenix_live_view, "~> 0.16.3"},
+    {:phoenix_live_view, "~> 0.17.6"},
     {:floki, ">= 0.30.0", only: :test}
   ]
 end
@@ -118,14 +128,14 @@ Where `@session_options` are the options given to `plug Plug.Session` by using a
 
 Finally, ensure you have placed a CSRF meta tag inside the `<head>` tag in your layout (`lib/my_app_web/templates/layout/app.html.*`) before `app.js` is included, like so:
 
-```html
+```heex
 <%= csrf_meta_tag() %>
 <script defer type="text/javascript" src="<%= Routes.static_path(@conn, "/js/app.js") %>"></script>
 ```
 
 and enable connecting to a LiveView socket in your `app.js` file.
 
-```javascript
+```
 // assets/js/app.js
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
@@ -198,10 +208,10 @@ pipeline :browser do
 end
 ```
 
-The layout given to `put_root_layout` must use `<%= @inner_content %>` instead of `<%= render(@view_module, @view_template, assigns) %>`. It is typically very barebones, with mostly
+The layout given to `put_root_layout` is typically very barebones, with mostly
 `<head>` and `<body>` tags. For example:
 
-```elixir
+```heex
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -304,12 +314,32 @@ $ npm install --prefix assets --save topbar
 Then customize LiveView to use it in your `assets/js/app.js`, right before the `liveSocket.connect()` call:
 
 ```js
-import topbar from "topbar"
-
 // Show progress bar on live navigation and form submits
+import topbar from "topbar"
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", info => topbar.show())
 window.addEventListener("phx:page-loading-stop", info => topbar.hide())
+```
+
+Alternatively, you can also delay showing the `topbar` and wait if the results do not appear within 200ms:
+
+```js
+// Show progress bar on live navigation and form submits
+import topbar from "topbar"
+topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
+let topBarScheduled = undefined
+
+window.addEventListener("phx:page-loading-start", () => {
+  if(!topBarScheduled) {
+    topBarScheduled = setTimeout(() => topbar.show(), 200)
+  }
+})
+
+window.addEventListener("phx:page-loading-stop", () => {
+  clearTimeout(topBarScheduled)
+  topBarScheduled = undefined
+  topbar.hide()
+})
 ```
 
 ## Location for LiveView modules

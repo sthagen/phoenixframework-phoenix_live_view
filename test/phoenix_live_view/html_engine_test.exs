@@ -2,7 +2,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveView.Helpers,
-    only: [sigil_H: 2, render_slot: 1, render_slot: 2]
+    only: [sigil_H: 2, render_slot: 1, render_slot: 2, assigns_to_attributes: 2]
 
   alias Phoenix.LiveView.HTMLEngine
   alias Phoenix.LiveView.HTMLTokenizer.ParseError
@@ -35,6 +35,11 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
 
   def assigns_component(assigns) do
     ~H"<%= inspect(Map.delete(assigns, :__changed__)) %>"
+  end
+
+  def textarea(assigns) do
+    assigns = Phoenix.LiveView.assign(assigns, :extra_assigns, assigns_to_attributes(assigns, []))
+    ~H"<textarea {@extra_assigns}><%= render_slot(@inner_block) %></textarea>"
   end
 
   def remote_function_component(assigns) do
@@ -184,6 +189,33 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     assert_raise ArgumentError, "expected a binary in <>, got: {:safe, \"<foo>\"}", fn ->
       render(~S(<div id={"pre-" <> @safe} />), assigns)
     end
+  end
+
+  def do_block(do: block), do: block
+
+  test "handles do blocks with expressions" do
+    assigns = %{not_text: "not text", text: "text"}
+
+    template = ~S"""
+    <%= @text %>
+    <%= Phoenix.LiveView.HTMLEngineTest.do_block do %><%= assigns[:not_text] %><% end %>
+    """
+
+    # A bug made it so "not text" appeared inside @text.
+    assert render(template, assigns) == "text\nnot text"
+
+    template = ~S"""
+    <%= for i <- ["id1", "id2", "id3"] do %>
+      <div id={i}>
+        <%= Phoenix.LiveView.HTMLEngineTest.do_block do %>
+          <%= i %>
+        <% end %>
+      </div>
+    <% end %>
+    """
+
+    # A bug made it so "id={id}" was not handled properly
+    assert render(template, assigns) =~ ~s'<div id="id1">'
   end
 
   test "optimizes class attributes" do
@@ -455,6 +487,26 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
           let={var1}
           let={var2}
         />
+        """)
+      end)
+    end
+
+    test "raise on unclosed local call" do
+      message = ~r".exs:1:(1:)? end of template reached without closing tag for <.local_function_component>"
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <.local_function_component value='1' let={var}>
+        """)
+      end)
+
+      message = ~r".exs:2:(3:)? end of do-block reached without closing tag for <.local_function_component>"
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <%= if true do %>
+          <.local_function_component value='1' let={var}>
+        <% end %>
         """)
       end)
     end
@@ -738,7 +790,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
 
     test "multiple slots with default" do
-      assigns = %{}
+      assigns = %{middle: "middle"}
 
       expected = """
       BEFORE COMPONENT
@@ -747,8 +799,9 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
           The header content
         \
 
-      TEXT:top
-        mid
+      TEXT:
+        top
+        foo middle bar
         bot
       :TEXT
 
@@ -767,7 +820,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
                <:header>
                  The header content
                </:header>
-               mid
+               foo <%= @middle %> bar
                <:footer>
                  The footer content
                </:footer>
@@ -783,7 +836,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
                <:header>
                  The header content
                </:header>
-               mid
+               foo <%= @middle %> bar
                <:footer>
                  The footer content
                </:footer>
@@ -953,6 +1006,20 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
         """)
       end)
 
+      message = ~r".exs:(2|3):(3:)? invalid slot entry <:sample>. A slot entry must be a direct child of a component"
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <Phoenix.LiveView.HTMLEngineTest.function_component_with_single_slot>
+        <%= if true do %>
+          <:sample>
+            <p>Content</p>
+          </:sample>
+        <% end %>
+        </Phoenix.LiveView.HTMLEngineTest.function_component_with_single_slot>
+        """)
+      end)
+
       message = ~r".exs:3:(5:)? invalid slot entry <:footer>. A slot entry must be a direct child of a component"
 
       assert_raise(ParseError, message, fn ->
@@ -1011,6 +1078,11 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
   end
 
   describe "tag validations" do
+    test "handles style" do
+      assert render("<style>a = '<a>';<%= :b %> = '<b>';</style>") ==
+               "<style>a = '<a>';b = '<b>';</style>"
+    end
+
     test "handles script" do
       assert render("<script>a = '<a>';<%= :b %> = '<b>';</script>") ==
                "<script>a = '<a>';b = '<b>';</script>"
@@ -1081,7 +1153,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
 
     test "missing closing tag" do
-      message = ~r/.exs:2:(1:)? end of file reached without closing tag for <div>/
+      message = ~r/.exs:2:(1:)? end of template reached without closing tag for <div>/
 
       assert_raise(ParseError, message, fn ->
         eval("""
@@ -1090,7 +1162,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
         """)
       end)
 
-      message = ~r/.exs:2:(3:)? end of file reached without closing tag for <span>/
+      message = ~r/.exs:2:(3:)? end of template reached without closing tag for <span>/
 
       assert_raise(ParseError, message, fn ->
         eval("""
@@ -1125,10 +1197,108 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
   end
 
+  test "do not render phx-no-format attr" do
+    rendered = eval("<div phx-no-format>Content</div>")
+    assert rendered.static == ["<div>Content</div>"]
+
+    rendered = eval("<div phx-no-format />")
+    assert rendered.static == ["<div></div>"]
+
+    assigns = %{}
+
+    assert compile("""
+           <Phoenix.LiveView.HTMLEngineTest.textarea phx-no-format>
+            Content
+           </Phoenix.LiveView.HTMLEngineTest.textarea>
+           """) == "<textarea>\n Content\n</textarea>"
+
+    assert compile("<.textarea phx-no-format>Content</.textarea>") ==
+             "<textarea>Content</textarea>"
+  end
+
+  describe "html validations" do
+    test "phx-update attr requires an unique ID" do
+      message = ~r/.exs:1:(1:)? attribute \"phx-update\" requires the \"id\" attribute to be set/
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-update="ignore">
+          Content
+        </div>
+        """)
+      end)
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-update="ignore" class="foo">
+          Content
+        </div>
+        """)
+      end)
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-update="ignore" class="foo" />
+        """)
+      end)
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-update={@value}>Content</div>
+        """)
+      end)
+
+      assert eval("""
+             <div id="id" phx-update={@value}>Content</div>
+             """)
+    end
+
+    test "validates phx-update values" do
+      message =
+        ~r/.exs:1:(1:)? the value of the attribute \"phx-update\" must be: ignore, append or prepend/
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div id="id" phx-update="bar">
+          Content
+        </div>
+        """)
+      end)
+    end
+
+    test "phx-hook attr requires an unique ID" do
+      message = ~r/.exs:1:(1:)? attribute \"phx-hook\" requires the \"id\" attribute to be set/
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-hook="MyHook">
+          Content
+        </div>
+        """)
+      end)
+
+      assert_raise(ParseError, message, fn ->
+        eval("""
+        <div phx-hook="MyHook" />
+        """)
+      end)
+    end
+
+    test "don't raise when there are dynamic variables" do
+      assert eval("""
+             <div phx-hook="MyHook" {@some_var}>Content</div>
+             """)
+
+      assert eval("""
+             <div phx-update="ignore" {@some_var}>Content</div>
+             """)
+    end
+  end
+
   describe "handle errors in expressions" do
     if Version.match?(System.version(), ">= 1.12.0") do
       test "inside attribute values" do
-        assert_raise(SyntaxError, "nofile:12:22: syntax error before: ','", fn ->
+        assert_raise(SyntaxError, ~r"test/phoenix_live_view/html_engine_test.exs:12:22: syntax error before: ','", fn ->
           opts = [line: 10, indentation: 8]
 
           eval(
@@ -1144,7 +1314,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
       end
 
       test "inside root attribute value" do
-        assert_raise(SyntaxError, "nofile:12:16: syntax error before: ','", fn ->
+        assert_raise(SyntaxError, ~r"test/phoenix_live_view/html_engine_test.exs:12:16: syntax error before: ','", fn ->
           opts = [line: 10, indentation: 8]
 
           eval(
@@ -1160,7 +1330,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
       end
     else
       test "older versions cannot provide correct line on errors" do
-        assert_raise(SyntaxError, ~r/nofile:2/, fn ->
+        assert_raise(SyntaxError, ~r"test/phoenix_live_view/html_engine_test.exs:2", fn ->
           opts = [line: 10, indentation: 8]
 
           eval(

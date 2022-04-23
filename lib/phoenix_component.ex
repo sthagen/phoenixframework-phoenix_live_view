@@ -143,7 +143,7 @@ defmodule Phoenix.Component do
         ~H"""
         <ul>
           <%= for entry <- @entries do %>
-            <li><%= render_block(@inner_block, entry) %></li>
+            <li><%= render_slot(@inner_block, entry) %></li>
           <% end %>
         </ul>
         """
@@ -153,6 +153,25 @@ defmodule Phoenix.Component do
 
       <.unordered_list let={entry} entries={~w(apple banana cherry)}>
         I like <%= entry %>
+      </.unordered_list>
+
+  You can also pattern match the arguments provided to the render block. Let's
+  make our `unordered_list` component fancier:
+
+      def unordered_list(assigns) do
+        ~H"""
+        <ul>
+          <%= for entry <- @entries do %>
+            <li><%= render_slot(@inner_block, %{entry: entry, gif_url: random_gif()}) %></li>
+          <% end %>
+        </ul>
+        """
+      end
+
+  And now we can invoke it like this:
+
+      <.unordered_list let={%{entry: entry, gif_url: url}}>
+        I like <%= entry %>. <img src={url} />
       </.unordered_list>
 
   ### Named slots
@@ -244,15 +263,15 @@ defmodule Phoenix.Component do
       def table(assigns) do
         ~H"""
         <table>
-          <th>
+          <tr>
             <%= for col <- @col do %>
-              <td><%= col.label %></td>
-            <% end >
-          </th>
+              <th><%= col.label %></th>
+            <% end %>
+          </tr>
           <%= for row <- @rows do %>
             <tr>
               <%= for col <- @col do %>
-                <%= render_slot(col, row) %>
+                <td><%= render_slot(col, row) %></td>
               <% end %>
             </tr>
           <% end %>

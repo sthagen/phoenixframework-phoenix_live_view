@@ -25,6 +25,30 @@ defmodule Phoenix.LiveViewTest.MountArgs do
   end
 end
 
+defmodule Phoenix.LiveViewTest.OnMount do
+  use Phoenix.Component
+
+  def on_mount(:default, _params, _session, socket) do
+    {:cont, socket}
+  end
+
+  def on_mount(:other, _params, _session, socket) do
+    {:cont, socket}
+  end
+end
+
+defmodule Phoenix.LiveViewTest.OtherOnMount do
+  use Phoenix.Component
+
+  def on_mount(:default, _params, _session, socket) do
+    {:cont, socket}
+  end
+
+  def on_mount(:other, _params, _session, socket) do
+    {:cont, socket}
+  end
+end
+
 defmodule Phoenix.LiveViewTest.HooksLive do
   use Phoenix.LiveView, namespace: Phoenix.LiveViewTest
   alias Phoenix.LiveViewTest.InitAssigns
@@ -243,4 +267,19 @@ defmodule Phoenix.LiveViewTest.HooksLive.HandleParamsNotDefined do
   end
 
   def render(assigns), do: ~H"url=<%= assigns[:url] %>"
+end
+
+defmodule Phoenix.LiveViewTest.HooksLive.HandleInfoNotDefined do
+  use Phoenix.LiveView, namespace: Phoenix.LiveViewTest
+
+  def mount(_, _, socket) do
+    send(self(), {:data, "somedata"})
+
+    {:ok, attach_hook(socket, :assign_url, :handle_info, fn message, socket ->
+      {:data, data} = message
+      {:cont, assign(socket, :data, data)}
+    end)}
+  end
+
+  def render(assigns), do: ~H"data=<%= assigns[:data] %>"
 end
