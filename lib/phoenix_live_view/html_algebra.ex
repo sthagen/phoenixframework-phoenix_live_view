@@ -87,9 +87,19 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
   defp inline_break(prev_node, next_node) do
     cond do
       block_preserve?(prev_node) or block_preserve?(next_node) ->
-        if text_ends_with_space?(prev_node) or text_starts_with_space?(next_node),
-          do: " ",
-          else: ""
+        cond do
+          text_ends_with_line_break?(prev_node) ->
+            flex_break(" ")
+
+          text_ends_with_space?(prev_node) or text_starts_with_space?(next_node) ->
+            " "
+
+          true ->
+            ""
+        end
+
+      text_starts_with_line_break?(next_node) and text_ends_with_line_break?(next_node) ->
+        break(" ")
 
       text_ends_with_space?(prev_node) or text_starts_with_space?(next_node) ->
         flex_break(" ")
@@ -110,6 +120,16 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
     do: :binary.last(text) in @codepoints
 
   defp text_ends_with_space?(_node), do: false
+
+  defp text_starts_with_line_break?({:text, text, _meta}) when text != "",
+    do: :binary.first(text) in '\n\r'
+
+  defp text_starts_with_line_break?(_node), do: false
+
+  defp text_ends_with_line_break?({:text, text, _meta}) when text != "",
+    do: :binary.last(text) in '\n\r'
+
+  defp text_ends_with_line_break?(_node), do: false
 
   defp block_preserve?({:tag_block, _, _, _, %{mode: :preserve}}), do: true
   defp block_preserve?({:eex, _, _}), do: true
@@ -336,9 +356,9 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
   defp format_tag_open(name, attrs, context),
     do: concat(["<#{name}", build_attrs(attrs, "", context.opts), ">"])
 
-  defp render_attribute({:root, {:expr, expr, _}}, _opts), do: ~s({#{expr}})
+  defp render_attribute({:root, {:expr, expr, _}, _}, _opts), do: ~s({#{expr}})
 
-  defp render_attribute({attr, {:string, value, %{delimiter: ?'}}}, _opts) do
+  defp render_attribute({attr, {:string, value, %{delimiter: ?'}}, _}, _opts) do
     if String.contains?(value, ["\"", "'"]) do
       ~s(#{attr}='#{value}')
     else
@@ -346,9 +366,9 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
     end
   end
 
-  defp render_attribute({attr, {:string, value, _meta}}, _opts), do: ~s(#{attr}="#{value}")
+  defp render_attribute({attr, {:string, value, _meta}, _}, _opts), do: ~s(#{attr}="#{value}")
 
-  defp render_attribute({attr, {:expr, value, meta}}, opts) do
+  defp render_attribute({attr, {:expr, value, meta}, _}, opts) do
     case Code.string_to_quoted(value) do
       {:ok, string} when is_binary(string) ->
         ~s(#{attr}="#{string}")
@@ -363,8 +383,8 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
     end
   end
 
-  defp render_attribute({attr, {_, value, _meta}}, _opts), do: ~s(#{attr}=#{value})
-  defp render_attribute({attr, nil}, _opts), do: ~s(#{attr})
+  defp render_attribute({attr, {_, value, _meta}, _}, _opts), do: ~s(#{attr}=#{value})
+  defp render_attribute({attr, nil, _}, _opts), do: ~s(#{attr})
 
   # Handle EEx clauses
   #
