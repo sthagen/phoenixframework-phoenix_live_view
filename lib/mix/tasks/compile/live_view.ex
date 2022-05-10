@@ -1,11 +1,11 @@
 defmodule Mix.Tasks.Compile.LiveView do
   @moduledoc """
   A LiveView compiler for component validation.
-  
+
   You must add it to your `mix.exs` as:
 
       compilers: Mix.compilers() ++ [:live_view]
-  
+
   """
   use Mix.Task
 
@@ -61,7 +61,7 @@ defmodule Mix.Tasks.Compile.LiveView do
   @doc false
   def manifests, do: [manifest()]
 
-  defp manifest, do: Path.join(Mix.Project.manifest_path, @manifest)
+  defp manifest, do: Path.join(Mix.Project.manifest_path(), @manifest)
 
   defp read_manifest do
     case File.read(manifest()) do
@@ -85,53 +85,62 @@ defmodule Mix.Tasks.Compile.LiveView do
     for module <- modules,
         Code.ensure_loaded?(module),
         function_exported?(module, :__components_calls__, 0),
-        %{component: {mod, fun}, attrs: attrs, file: file, line: line} <- module.__components_calls__(),
-        attrs_defs = mod.__components__()[fun] do
-      {dyn_attrs, static_attrs} = Enum.split_with(attrs, &match?({:root, _, _}, &1))
-      meta = %{file: file, line: line, callee: "#{inspect(mod)}.#{fun}/1"}
-
-      [
-        maybe_validate_required_attrs(static_attrs, dyn_attrs, attrs_defs, meta),
-        validate_undefined_attrs(static_attrs, attrs_defs, meta)
-      ]
-    end
-    |> List.flatten()
+        %{component: {mod, fun}} = call <- module.__components_calls__(),
+        attrs_defs = mod.__components__()[fun],
+        diagnostic <- diagnostics(call, attrs_defs),
+        do: diagnostic
   end
 
-  defp maybe_validate_required_attrs(static_attrs, _dyn_attrs = [], attrs_defs, meta) do
-    validate_required_attrs(static_attrs, attrs_defs, meta)
+  defp diagnostics(%{attrs: attrs, root: root} = call, attrs_defs) do
+    {warnings, attrs} =
+      Enum.flat_map_reduce(attrs_defs, attrs, fn attr_def, attrs ->
+        %{name: name, required: required, type: type} = attr_def
+        {value, attrs} = Map.pop(attrs, name)
+
+        warnings =
+          case value do
+            nil when not root and required ->
+              message = "missing required attribute \"#{name}\" for component #{component(call)}"
+              [error(message, call.file, call.line)]
+
+            {line, _column, string} when is_binary(string) and type not in [:any, :string] ->
+              message =
+                "attribute \"#{name}\" in component #{component(call)} must be a #{inspect(type)}, " <>
+                  "got string: #{inspect(string)}"
+
+              [error(message, call.file, line)]
+
+            {line, _column, nil} when type not in [:any, :boolean] ->
+              message =
+                "attribute \"#{name}\" in component #{component(call)} must be a #{inspect(type)}, " <>
+                  "got boolean: true"
+
+              [error(message, call.file, line)]
+
+            _ ->
+              []
+          end
+
+        {warnings, attrs}
+      end)
+
+    missing =
+      for {name, {line, _column, _value}} <- attrs do
+        message = "undefined attribute \"#{name}\" for component #{component(call)}"
+        error(message, call.file, line)
+      end
+
+    warnings ++ missing
   end
 
-  defp maybe_validate_required_attrs(_, _, _, _) do
-    []
-  end
-
-  defp validate_required_attrs(static_attrs, attrs_defs, meta) do
-    %{callee: callee, file: file, line: line} = meta
-    passed_attrs = Enum.map(static_attrs, &elem(&1, 0))
-
-    for %{name: name, opts: opts} <- attrs_defs,
-        opts[:required],
-        Atom.to_string(name) not in passed_attrs do
-      message = "missing required attribute `#{name}` for component `#{callee}`"
-      error(message, file, line)
-    end
-  end
-
-  defp validate_undefined_attrs(static_attrs, attrs_defs, meta) do
-    %{callee: callee, file: file} = meta
-    defined_attrs = Enum.map(attrs_defs, fn %{name: name} -> Atom.to_string(name) end)
-
-    for {name, _value, %{line: line}} <- static_attrs, name not in defined_attrs do
-      message = "undefined attribute `#{name}` for component `#{callee}`"
-      error(message, file, line)
-    end
+  defp component(%{component: {mod, fun}}) do
+    "#{inspect(mod)}.#{fun}/1"
   end
 
   defp project_modules do
     files =
       Mix.Project.compile_path()
-      |> File.ls!
+      |> File.ls!()
       |> Enum.sort()
 
     for file <- files, [basename, ""] <- [:binary.split(file, ".beam")] do
@@ -142,7 +151,7 @@ defmodule Mix.Tasks.Compile.LiveView do
   defp print_diagnostics(diagnostics) do
     for %Diagnostic{file: file, position: line, message: message} <- diagnostics do
       rel_file = file |> Path.relative_to_cwd() |> to_charlist()
-      # Use IO.warn(message, file: ..., line: ...) on Elixir v1.14+ 
+      # Use IO.warn(message, file: ..., line: ...) on Elixir v1.14+
       IO.warn(message, [{nil, :__FILE__, 1, [file: rel_file, line: line]}])
     end
   end

@@ -12,6 +12,7 @@ defmodule Phoenix.ComponentTest do
   describe "rendering" do
     defp hello(assigns) do
       assigns = assign_new(assigns, :name, fn -> "World" end)
+
       ~H"""
       Hello <%= @name %>
       """
@@ -188,9 +189,7 @@ defmodule Phoenix.ComponentTest do
              ) ==
                [["%{foo: true, inner_block: true}", ["%{foo: true}"]]]
 
-      assert eval(
-               ~H|<.inner_changed><%= @foo %></.inner_changed>|
-             ) ==
+      assert eval(~H|<.inner_changed><%= @foo %></.inner_changed>|) ==
                [["%{inner_block: true}", ["1"]]]
 
       assigns = %{foo: 1, __changed__: %{foo: %{bar: true}}}
@@ -203,33 +202,31 @@ defmodule Phoenix.ComponentTest do
              ) ==
                [["%{foo: %{bar: true}, inner_block: true}", ["%{foo: %{bar: true}}"]]]
 
-      assert eval(
-               ~H|<.inner_changed><%= @foo %></.inner_changed>|
-             ) ==
+      assert eval(~H|<.inner_changed><%= @foo %></.inner_changed>|) ==
                [["%{inner_block: %{bar: true}}", ["1"]]]
     end
 
     test "with let" do
       assigns = %{foo: 1, __changed__: %{}}
-      assert eval(~H|<.inner_changed let={_foo} foo={@foo}></.inner_changed>|) == [nil]
+      assert eval(~H|<.inner_changed :let={_foo} foo={@foo}></.inner_changed>|) == [nil]
 
       assigns = %{foo: 1, __changed__: %{foo: true}}
 
-      assert eval(~H|<.inner_changed let={_foo} foo={@foo}></.inner_changed>|) ==
+      assert eval(~H|<.inner_changed :let={_foo} foo={@foo}></.inner_changed>|) ==
                [["%{foo: true}", nil]]
 
       assert eval(
-               ~H|<.inner_changed let={_foo} foo={@foo}><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
+               ~H|<.inner_changed :let={_foo} foo={@foo}><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
              ) ==
                [["%{foo: true, inner_block: true}", ["%{foo: true}"]]]
 
       assert eval(
-               ~H|<.inner_changed let={_foo} foo={@foo}><%= "constant" %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
+               ~H|<.inner_changed :let={_foo} foo={@foo}><%= "constant" %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
              ) ==
                [["%{foo: true, inner_block: true}", [nil, "%{foo: true}"]]]
 
       assert eval(
-               ~H|<.inner_changed let={foo} foo={@foo}><.inner_changed let={_bar} bar={foo}><%= "constant" %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed></.inner_changed>|
+               ~H|<.inner_changed :let={foo} foo={@foo}><.inner_changed :let={_bar} bar={foo}><%= "constant" %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed></.inner_changed>|
              ) ==
                [
                  [
@@ -239,12 +236,12 @@ defmodule Phoenix.ComponentTest do
                ]
 
       assert eval(
-               ~H|<.inner_changed let={foo} foo={@foo}><%= foo %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
+               ~H|<.inner_changed :let={foo} foo={@foo}><%= foo %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed>|
              ) ==
                [["%{foo: true, inner_block: true}", ["var", "%{foo: true}"]]]
 
       assert eval(
-               ~H|<.inner_changed let={foo} foo={@foo}><.inner_changed let={bar} bar={foo}><%= bar %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed></.inner_changed>|
+               ~H|<.inner_changed :let={foo} foo={@foo}><.inner_changed :let={bar} bar={foo}><%= bar %><%= inspect(Map.get(assigns, :__changed__)) %></.inner_changed></.inner_changed>|
              ) ==
                [
                  [
@@ -265,11 +262,10 @@ defmodule Phoenix.ComponentTest do
   end
 
   describe "component metadata" do
-
     defmodule RemoteFunctionComponentWithAttrs do
       use Phoenix.Component
 
-      attr :id, :any, required: true
+      attr(:id, :any, required: true)
       def remote(assigns), do: ~H[]
     end
 
@@ -279,21 +275,22 @@ defmodule Phoenix.ComponentTest do
       alias RemoteFunctionComponentWithAttrs, as: Remote
 
       def func1_line, do: __ENV__.line
-      attr :id, :any, required: true
-      attr :email, :any
+      attr(:id, :any, required: true)
+      attr(:email, :any)
       def func1(assigns), do: ~H[]
 
       def func2_line, do: __ENV__.line
-      attr :name, :any, required: true
+      attr(:name, :any, required: true)
       def func2(assigns), do: ~H[]
 
       def render_line, do: __ENV__.line
+
       def render(assigns) do
         ~H"""
         <!-- local -->
         <.func1 id="1"/>
         <!-- local with inner content -->
-        <.func1 id="2">CONTENT</.func1>
+        <.func1 id="2" email>CONTENT</.func1>
         <!-- imported -->
         <.remote id="3"/>
         <!-- remote -->
@@ -301,172 +298,182 @@ defmodule Phoenix.ComponentTest do
         <!-- remote with inner content -->
         <RemoteFunctionComponentWithAttrs.remote id="5">CONTENT</RemoteFunctionComponentWithAttrs.remote>
         <!-- remote and aliased -->
-        <Remote.remote id="6"/>
+        <Remote.remote id="6" {[dynamic: :values]}/>
         """
       end
     end
 
-    test "store attributes definitions" do
+    test "stores attributes definitions" do
       func1_line = FunctionComponentWithAttrs.func1_line()
       func2_line = FunctionComponentWithAttrs.func2_line()
 
       assert FunctionComponentWithAttrs.__components__() == %{
-        func1: [
-          %{name: :id, type: :any, opts: [required: true], line: func1_line + 1},
-          %{name: :email, type: :any, opts: [], line: func1_line + 2}
-        ],
-        func2: [
-          %{name: :name, type: :any, opts: [required: true], line: func2_line + 1}
-        ]
-      }
+               func1: [
+                 %{name: :email, type: :any, opts: [], required: false, line: func1_line + 2},
+                 %{name: :id, type: :any, opts: [], required: true, line: func1_line + 1}
+               ],
+               func2: [
+                 %{name: :name, type: :any, opts: [], required: true, line: func2_line + 1}
+               ]
+             }
     end
 
-    test "store component calls" do
+    test "stores component calls" do
       render_line = FunctionComponentWithAttrs.render_line()
-      {call_1_line, call_3_line} =
-        if Version.match?(System.version(), ">= 1.12.0") do
-          {render_line + 4, render_line + 8}
-        else
-          {2, 6}
-        end
 
+      call_1_line = render_line + 5
+      call_3_line = render_line + 9
       file = __ENV__.file
 
       assert [
-        %{
-          component: {FunctionComponentWithAttrs, :func1},
-          attrs: [{"id", {:string, "1", %{}}, %{}}],
-          file: ^file,
-          line: ^call_1_line
-        },
-        %{
-          component: {FunctionComponentWithAttrs, :func1},
-          attrs: [{"id", {:string, "2", %{}}, %{}}]
-        },
-        %{
-          attrs: [{"id", {:string, "3", %{}}, %{}}],
-          component: {RemoteFunctionComponentWithAttrs, :remote},
-          file: ^file,
-          line: ^call_3_line
-        },
-        %{
-          attrs: [{"id", {:string, "4", %{}}, %{}}],
-          component: {RemoteFunctionComponentWithAttrs, :remote}
-        },
-        %{
-          attrs: [{"id", {:string, "5", %{}}, %{}}],
-          component: {RemoteFunctionComponentWithAttrs, :remote}
-        },
-        %{
-          attrs: [{"id", {:string, "6", %{}}, %{}}],
-          component: {RemoteFunctionComponentWithAttrs, :remote}
-        }
-      ] = FunctionComponentWithAttrs.__components_calls__()
+               %{
+                 component: {FunctionComponentWithAttrs, :func1},
+                 attrs: %{id: {_, _, "1"}},
+                 file: ^file,
+                 line: ^call_1_line
+               },
+               %{
+                 component: {FunctionComponentWithAttrs, :func1},
+                 attrs: %{id: {_, _, "2"}, email: {_, _, nil}},
+               },
+               %{
+                 attrs: %{id: {_, _, "3"}},
+                 component: {RemoteFunctionComponentWithAttrs, :remote},
+                 file: ^file,
+                 line: ^call_3_line
+               },
+               %{
+                 attrs: %{id: {_, _, "4"}},
+                 component: {RemoteFunctionComponentWithAttrs, :remote}
+               },
+               %{
+                 attrs: %{id: {_, _, "5"}},
+                 component: {RemoteFunctionComponentWithAttrs, :remote},
+                 root: false
+               },
+               %{
+                 attrs: %{id: {_, _, "6"}},
+                 component: {RemoteFunctionComponentWithAttrs, :remote},
+                 root: true
+               }
+             ] = FunctionComponentWithAttrs.__components_calls__()
     end
 
-    test "do not generate __components_calls__ if there's no call" do
+    test "does not generate __components_calls__ if there's no call" do
       refute function_exported?(RemoteFunctionComponentWithAttrs, :__components_calls__, 0)
     end
 
+    test "stores components for bodyless clauses" do
+      defmodule Bodyless do
+        use Phoenix.Component
+
+        attr(:example, :any, required: true)
+        def example(assigns)
+
+        def example(_assigns) do
+          "hello"
+        end
+      end
+
+      assert Bodyless.__components__() == %{
+               example: [
+                 %{line: __ENV__.line - 10, name: :example, opts: [], required: true, type: :any}
+               ]
+             }
+    end
+
+    test "matches on struct types" do
+      defmodule StructTypes do
+        use Phoenix.Component
+
+        attr(:uri, URI, required: true)
+        attr(:other, :any)
+        def example(%{other: 1}), do: "one"
+        def example(%{other: 2}), do: "two"
+      end
+
+      assert_raise FunctionClauseError, fn -> StructTypes.example(%{other: 1, uri: :not_uri}) end
+      assert_raise FunctionClauseError, fn -> StructTypes.example(%{other: 2, uri: :not_uri}) end
+
+      uri = URI.parse("/relative")
+      assert StructTypes.example(%{other: 1, uri: uri}) == "one"
+      assert StructTypes.example(%{other: 2, uri: uri}) == "two"
+    end
+
     test "raise if attr is not declared before the first function definition" do
-      code = """
-      defmodule Phoenix.ComponentTest.MultiClause do
-        use Elixir.Phoenix.Component
+      assert_raise CompileError,
+                   ~r/attributes must be defined before the first function clause at line \d+/,
+                   fn ->
+                     defmodule Phoenix.ComponentTest.MultiClauseWrong do
+                       use Elixir.Phoenix.Component
 
-        attr :foo, :any
-        def func(assigns = %{foo: _}), do: ~H[]
-        def func(assigns = %{bar: _}), do: ~H[]
-      end
-      """
+                       attr(:foo, :any)
+                       def func(assigns = %{foo: _}), do: ~H[]
+                       def func(assigns = %{bar: _}), do: ~H[]
 
-      assert {{:module, _, _, _}, _} = Code.eval_string(code)
-
-      code = """
-      defmodule Phoenix.ComponentTest.MultiClauseWrong do
-        use Elixir.Phoenix.Component
-
-        attr :foo, :any
-        def func(assigns = %{foo: _}), do: ~H[]
-        def func(assigns = %{bar: _}), do: ~H[]
-
-        attr :bar, :any
-        def func(assigns = %{baz: _}), do: ~H[]
-      end
-      """
-
-      message = "code:8: attributes must be defined before the first function clause at line 5"
-
-      assert_raise(CompileError, message, fn ->
-        Code.eval_string(code, [], %{__ENV__ | file: "code", line: 1})
-      end)
+                       attr(:bar, :any)
+                       def func(assigns = %{baz: _}), do: ~H[]
+                     end
+                   end
     end
 
     test "raise if attr is declared on an invalid function" do
-      code = """
-      defmodule Phoenix.ComponentTest.AttrOnInvalidFunction do
-        use Elixir.Phoenix.Component
+      assert_raise CompileError,
+                   ~r/cannot declare attributes for function func\/2\. Components must be functions with arity 1/,
+                   fn ->
+                     defmodule Phoenix.ComponentTest.AttrOnInvalidFunction do
+                       use Elixir.Phoenix.Component
 
-        attr :foo, :any
-        def func(a, b), do: a + b
-      end
-      """
-
-      message = """
-      code:4: cannot declare attributes for `func/2`. \
-      Components must be functions with arity 1.\
-      """
-      assert_raise(CompileError, message, fn ->
-        Code.eval_string(code, [], %{__ENV__ | file: "code", line: 1})
-      end)
+                       attr(:foo, :any)
+                       def func(a, b), do: a + b
+                     end
+                   end
     end
 
     test "raise if attr is declared without a related function" do
-      code = """
-      defmodule Phoenix.ComponentTest.AttrOnInvalidFunction do
-        use Elixir.Phoenix.Component
+      assert_raise CompileError,
+                   ~r/cannot define attributes without a related function component/,
+                   fn ->
+                     defmodule Phoenix.ComponentTest.AttrOnInvalidFunction do
+                       use Elixir.Phoenix.Component
 
-        def func(assigns = %{baz: _}), do: ~H[]
+                       def func(assigns = %{baz: _}), do: ~H[]
 
-        attr :foo, :any
-      end
-      """
-
-      message = "code:6: cannot define attributes without a related function component"
-      assert_raise(CompileError, message, fn ->
-        Code.eval_string(code, [], %{__ENV__ | file: "code", line: 1})
-      end)
+                       attr(:foo, :any)
+                     end
+                   end
     end
 
     test "raise if attr type is not supported" do
-      code = """
-      defmodule Phoenix.ComponentTest.AttrTypeNotSupported do
-        use Elixir.Phoenix.Component
+      assert_raise CompileError, ~r/invalid type :not_a_type for attr :foo/, fn ->
+        defmodule Phoenix.ComponentTest.AttrTypeNotSupported do
+          use Elixir.Phoenix.Component
 
-        attr :foo, :not_a_type
-        def func(assigns), do: ~H[]
+          attr(:foo, :not_a_type)
+          def func(assigns), do: ~H[]
+        end
       end
-      """
-
-      message = "code:4: invalid type `:not_a_type` for attr `:foo`. Currently, only type `:any` is supported."
-      assert_raise(CompileError, message, fn ->
-        Code.eval_string(code, [], %{__ENV__ | file: "code", line: 1})
-      end)
     end
 
     test "raise if attr option is not supported" do
-      code = """
-      defmodule Phoenix.ComponentTest.AttrOptionNotSupported do
-        use Elixir.Phoenix.Component
+      assert_raise CompileError, ~r"invalid option :not_an_opt for attr :foo", fn ->
+        defmodule Phoenix.ComponentTest.AttrOptionNotSupported do
+          use Elixir.Phoenix.Component
 
-        attr :foo, :any, not_an_opt: true
-        def func(assigns), do: ~H[]
+          attr(:foo, :any, not_an_opt: true)
+          def func(assigns), do: ~H[]
+        end
       end
-      """
+    end
 
-      message = "code:4: invalid option `:not_an_opt` for attr `:foo`. Currently, only `:required` is supported."
-      assert_raise(CompileError, message, fn ->
-        Code.eval_string(code, [], %{__ENV__ | file: "code", line: 1})
-      end)
+    for {k, v} <- [one: 1, two: 2, three: 3] do
+      defp lookup(unquote(k)), do: unquote(v)
+    end
+
+    test "does not change Elixir semantics" do
+      assert lookup(:one) == 1
+      assert lookup(:two) == 2
+      assert lookup(:three) == 3
     end
   end
 end

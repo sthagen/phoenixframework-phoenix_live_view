@@ -7,13 +7,12 @@ defmodule Phoenix.LiveView.HTMLEngine do
   its "subengine".
   """
 
-  # TODO: Use @impl true instead of @doc false when we require Elixir v1.12
   alias Phoenix.LiveView.HTMLTokenizer
   alias Phoenix.LiveView.HTMLTokenizer.ParseError
 
   @behaviour Phoenix.Template.Engine
 
-  @doc false
+  @impl true
   def compile(path, _name) do
     # We need access for the caller, so we return a call to a macro.
     quote do
@@ -30,7 +29,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   @behaviour EEx.Engine
 
-  @doc false
+  @impl true
   def init(opts) do
     {subengine, opts} = Keyword.pop(opts, :subengine, Phoenix.LiveView.Engine)
     {module, opts} = Keyword.pop(opts, :module)
@@ -53,7 +52,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   ## These callbacks return AST
 
-  @doc false
+  @impl true
   def handle_body(%{tokens: tokens, file: file, cont: cont} = state) do
     tokens = HTMLTokenizer.finalize(tokens, file, cont)
 
@@ -66,8 +65,6 @@ defmodule Phoenix.LiveView.HTMLEngine do
     opts = [root: token_state.root || false]
     ast = invoke_subengine(token_state, :handle_body, [opts])
 
-    # Do not require if calling module is helpers. Fix for elixir < 1.12
-    # TODO remove after Elixir >= 1.12 support
     if state.module === Phoenix.LiveView.Helpers do
       ast
     else
@@ -89,7 +86,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
     raise ParseError, line: line, column: column, file: file, description: message
   end
 
-  @doc false
+  @impl true
   def handle_end(state) do
     state
     |> token_state(false)
@@ -98,7 +95,10 @@ defmodule Phoenix.LiveView.HTMLEngine do
     |> invoke_subengine(:handle_end, [])
   end
 
-  defp token_state(%{subengine: subengine, substate: substate, file: file, module: module, caller: caller}, root) do
+  defp token_state(
+         %{subengine: subengine, substate: substate, file: file, module: module, caller: caller},
+         root
+       ) do
     %{
       subengine: subengine,
       substate: substate,
@@ -118,24 +118,19 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   ## These callbacks update the state
 
-  @doc false
+  @impl true
   def handle_begin(state) do
     update_subengine(%{state | tokens: []}, :handle_begin, [])
   end
 
-  @doc false
-  def handle_text(state, text) do
-    handle_text(state, [], text)
-  end
-
-  @doc false
+  @impl true
   def handle_text(state, meta, text) do
     %{file: file, indentation: indentation, tokens: tokens, cont: cont} = state
     {tokens, cont} = HTMLTokenizer.tokenize(text, file, indentation, meta, tokens, cont)
     %{state | tokens: tokens, cont: cont}
   end
 
-  @doc false
+  @impl true
   def handle_expr(%{tokens: tokens} = state, marker, expr) do
     %{state | tokens: [{:expr, marker, expr} | tokens]}
   end
@@ -148,15 +143,6 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp pop_substate_from_stack(%{stack: [{:substate, substate} | stack]} = state) do
     %{state | stack: stack, substate: substate}
-  end
-
-  defp invoke_subengine(%{subengine: subengine, substate: substate}, :handle_text, args) do
-    # TODO: Remove this once we require Elixir v1.12
-    if function_exported?(subengine, :handle_text, 3) do
-      apply(subengine, :handle_text, [substate | args])
-    else
-      apply(subengine, :handle_text, [substate | tl(args)])
-    end
   end
 
   defp invoke_subengine(%{subengine: subengine, substate: substate}, fun, args) do
@@ -262,7 +248,8 @@ defmodule Phoenix.LiveView.HTMLEngine do
   # Remote function component (self close)
 
   defp handle_token(
-         {:tag_open, <<first, _::binary>> = tag_name, attrs, %{self_close: true, line: line} = tag_meta},
+         {:tag_open, <<first, _::binary>> = tag_name, attrs,
+          %{self_close: true, line: line} = tag_meta},
          state
        )
        when first in ?A..?Z do
@@ -370,7 +357,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
         line: let_meta.line,
         column: let_meta.column,
         file: state.file,
-        description: "cannot use `let` on a slot without inner content"
+        description: "cannot use :let on a slot without inner content"
     end
 
     attrs = [inner_block: nil, __slot__: slot_key] ++ attrs
@@ -587,9 +574,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp extract_binaries(value, false, acc), do: [{:binary, value} | acc]
   defp extract_binaries(_value, true, _acc), do: :error
 
-  # TODO: We can refactor the empty_attribute_encoder to simply return an atom
-  # but there is a bug in Elixir v1.12 and earlier where mixing `line: expr`
-  # with .unquote(fun) leads to bugs in line numbers.
+  # TODO: We can refactor the empty_attribute_encoder to simply return an atom on Elixir v1.13+
   defp empty_attribute_encoder("class", value, meta) do
     quote line: meta[:line], do: unquote(__MODULE__).class_attribute_encode(unquote(value))
   end
@@ -647,8 +632,10 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     inner_block_assigns =
       quote line: line do
-        %{__slot__: :inner_block,
-          inner_block: Phoenix.LiveView.Helpers.inner_block(:inner_block, do: unquote(clauses))}
+        %{
+          __slot__: :inner_block,
+          inner_block: Phoenix.LiveView.Helpers.inner_block(:inner_block, do: unquote(clauses))
+        }
       end
 
     {slots, state} = pop_slots(state)
@@ -672,23 +659,26 @@ defmodule Phoenix.LiveView.HTMLEngine do
     {let, [quoted_value | r], a}
   end
 
+  # TODO: deprecate "let" in favor of `:let` on LV v0.19.
   defp split_component_attr(
-         {"let", {:expr, value, %{line: line, column: col} = meta}, _attr_meta},
+         {let, {:expr, value, %{line: line, column: col} = meta}, _attr_meta},
          {nil, r, a},
          file
-       ) do
+       )
+       when let in ["let", ":let"] do
     quoted_value = Code.string_to_quoted!(value, line: line, column: col, file: file)
     {{quoted_value, meta}, r, a}
   end
 
   defp split_component_attr(
-         {"let", {:expr, _value, previous_meta}, _attr_meta},
+         {let, {:expr, _value, previous_meta}, _attr_meta},
          {{_, meta}, _, _},
          file
-       ) do
+       )
+       when let in ["let", ":let"] do
     message = """
-    cannot define multiple `let` attributes. \
-    Another `let` has already been defined at line #{previous_meta.line}\
+    cannot define multiple :let attributes. \
+    Another :let has already been defined at line #{previous_meta.line}\
     """
 
     raise ParseError,
@@ -745,9 +735,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
   @doc false
   def __unmatched_let__!(pattern, value) do
     message = """
-    cannot match arguments sent from `render_slot/2` against the pattern in `let`.
+    cannot match arguments sent from render_slot/2 against the pattern in :let.
 
-    Expected a value matching `#{pattern}`, got: `#{inspect(value)}`.
+    Expected a value matching `#{pattern}`, got: #{inspect(value)}\
     """
 
     stacktrace =
@@ -761,7 +751,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp raise_if_let!(let, file) do
     with {_pattern, %{line: line}} <- let do
-      message = "cannot use `let` on a component without inner content"
+      message = "cannot use :let on a component without inner content"
       raise CompileError, line: line, file: file, description: message
     end
   end
@@ -790,10 +780,21 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp store_component_call(module, component, attrs, file, line) do
     if Module.open?(module) do
-      call = %{component: component, attrs: attrs, file: file, line: line}
+      pruned_attrs =
+        for {attr, value, meta} <- attrs,
+            is_binary(attr) and not String.starts_with?(attr, ":"),
+            do: {String.to_atom(attr), {meta[:line], meta[:column], component_call_value(value)}},
+            into: %{}
+
+      root = List.keymember?(attrs, :root, 0)
+      call = %{component: component, attrs: pruned_attrs, file: file, line: line, root: root}
       Module.put_attribute(module, :__components_calls__, call)
     end
   end
+
+  defp component_call_value({:expr, _, _}), do: :expr
+  defp component_call_value({:string, string, _}), do: string
+  defp component_call_value(nil), do: nil
 
   ## Helpers
 
@@ -807,14 +808,14 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp actual_component_module(env, fun) do
     case lookup_import(env, {fun, 1}) do
-      [{_, module}| _] -> module
+      [{_, module} | _] -> module
       _ -> env.module
     end
   end
 
   # TODO: Use Macro.Env.lookup_import/2 when we require Elixir v1.13+
   defp lookup_import(%Macro.Env{functions: functions, macros: macros}, {name, arity} = pair)
-      when is_atom(name) and is_integer(arity) do
+       when is_atom(name) and is_integer(arity) do
     f = for {mod, pairs} <- functions, :ordsets.is_element(pair, pairs), do: {:function, mod}
     m = for {mod, pairs} <- macros, :ordsets.is_element(pair, pairs), do: {:macro, mod}
     f ++ m
@@ -850,7 +851,13 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp validate_phx_attrs!([{"id", _, _} | t], meta, state, attr, _id?),
     do: validate_phx_attrs!(t, meta, state, attr, true)
 
-  defp validate_phx_attrs!([{"phx-update", {:string, value, _meta}, _} | t], meta, state, _attr, id?) do
+  defp validate_phx_attrs!(
+         [{"phx-update", {:string, value, _meta}, _} | t],
+         meta,
+         state,
+         _attr,
+         id?
+       ) do
     if value in ~w(ignore append prepend replace) do
       validate_phx_attrs!(t, meta, state, "phx-update", id?)
     else
