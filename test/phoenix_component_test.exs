@@ -308,13 +308,40 @@ defmodule Phoenix.ComponentTest do
       func2_line = FunctionComponentWithAttrs.func2_line()
 
       assert FunctionComponentWithAttrs.__components__() == %{
-               func1: [
-                 %{name: :email, type: :any, opts: [], required: false, line: func1_line + 2},
-                 %{name: :id, type: :any, opts: [], required: true, line: func1_line + 1}
-               ],
-               func2: [
-                 %{name: :name, type: :any, opts: [], required: true, line: func2_line + 1}
-               ]
+               func1: %{
+                 kind: :def,
+                 attrs: [
+                   %{
+                     name: :email,
+                     type: :any,
+                     opts: [],
+                     required: false,
+                     line: func1_line + 2,
+                     default: nil
+                   },
+                   %{
+                     name: :id,
+                     type: :any,
+                     opts: [],
+                     required: true,
+                     line: func1_line + 1,
+                     default: nil
+                   }
+                 ]
+               },
+               func2: %{
+                 kind: :def,
+                 attrs: [
+                   %{
+                     name: :name,
+                     type: :any,
+                     opts: [],
+                     required: true,
+                     line: func2_line + 1,
+                     default: nil
+                   }
+                 ]
+               }
              }
     end
 
@@ -334,7 +361,7 @@ defmodule Phoenix.ComponentTest do
                },
                %{
                  component: {FunctionComponentWithAttrs, :func1},
-                 attrs: %{id: {_, _, "2"}, email: {_, _, nil}},
+                 attrs: %{id: {_, _, "2"}, email: {_, _, nil}}
                },
                %{
                  attrs: %{id: {_, _, "3"}},
@@ -376,9 +403,19 @@ defmodule Phoenix.ComponentTest do
       end
 
       assert Bodyless.__components__() == %{
-               example: [
-                 %{line: __ENV__.line - 10, name: :example, opts: [], required: true, type: :any}
-               ]
+               example: %{
+                 kind: :def,
+                 attrs: [
+                   %{
+                     line: __ENV__.line - 13,
+                     name: :example,
+                     opts: [],
+                     required: true,
+                     type: :any,
+                     default: nil
+                   }
+                 ]
+               }
              }
     end
 
@@ -398,6 +435,22 @@ defmodule Phoenix.ComponentTest do
       uri = URI.parse("/relative")
       assert StructTypes.example(%{other: 1, uri: uri}) == "one"
       assert StructTypes.example(%{other: 2, uri: uri}) == "two"
+    end
+
+    test "provides defaults" do
+      defmodule Defaults do
+        use Phoenix.Component
+
+        attr(:one, :integer, default: 1)
+        attr(:two, :integer, default: 2)
+        def add(assigns), do: ~H[<%= @one + @two %>]
+
+        attr(:implicit_default, :string)
+        def example(assigns), do: ~H[<%= inspect @implicit_default %>]
+      end
+
+      assert Defaults.add(%{}) |> h2s() == "3"
+      assert Defaults.example(%{}) |> h2s() == "nil"
     end
 
     test "raise if attr is not declared before the first function definition" do
@@ -466,12 +519,14 @@ defmodule Phoenix.ComponentTest do
       end
     end
 
+    defp lookup(_key \\ :one)
+
     for {k, v} <- [one: 1, two: 2, three: 3] do
       defp lookup(unquote(k)), do: unquote(v)
     end
 
     test "does not change Elixir semantics" do
-      assert lookup(:one) == 1
+      assert lookup() == 1
       assert lookup(:two) == 2
       assert lookup(:three) == 3
     end

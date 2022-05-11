@@ -344,11 +344,16 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
 
   defp build_attrs(attrs, on_break, opts) do
     attrs
+    |> Enum.sort_by(&attrs_sorter/1, :desc)
     |> Enum.reduce(empty(), &concat([&2, break(" "), render_attribute(&1, opts)]))
     |> nest(2)
     |> concat(break(on_break))
     |> group()
   end
+
+  # Just add attrs that starts with `:` such as `:let` at the beginning.
+  defp attrs_sorter({attr, _, _}) when is_binary(attr), do: :binary.first(attr) == ?:
+  defp attrs_sorter({_, _, _}), do: false
 
   defp format_tag_open(name, [attr], context),
     do: concat(["<#{name} ", render_attribute(attr, context.opts), ">"])
@@ -369,6 +374,13 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
   defp render_attribute({attr, {:string, value, _meta}, _}, _opts), do: ~s(#{attr}="#{value}")
 
   defp render_attribute({attr, {:expr, value, meta}, _}, opts) do
+    # TODO: remove me when "let" is not supported anymore.
+    attr =
+      case attr do
+        "let" -> ":let"
+        attr -> attr
+      end
+
     case Code.string_to_quoted(value) do
       {:ok, string} when is_binary(string) ->
         ~s(#{attr}="#{string}")

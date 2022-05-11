@@ -1,10 +1,10 @@
-defmodule Mix.Tasks.Compile.LiveView do
+defmodule Mix.Tasks.Compile.PhoenixLiveView do
   @moduledoc """
   A LiveView compiler for component validation.
 
   You must add it to your `mix.exs` as:
 
-      compilers: Mix.compilers() ++ [:live_view]
+      compilers: Mix.compilers() ++ [:phoenix_live_view]
 
   """
   use Mix.Task
@@ -86,12 +86,12 @@ defmodule Mix.Tasks.Compile.LiveView do
         Code.ensure_loaded?(module),
         function_exported?(module, :__components_calls__, 0),
         %{component: {mod, fun}} = call <- module.__components_calls__(),
-        attrs_defs = mod.__components__()[fun],
-        diagnostic <- diagnostics(call, attrs_defs),
+        component = mod.__components__()[fun],
+        diagnostic <- diagnostics(call, component),
         do: diagnostic
   end
 
-  defp diagnostics(%{attrs: attrs, root: root} = call, attrs_defs) do
+  defp diagnostics(%{attrs: attrs, root: root} = call, %{attrs: attrs_defs}) do
     {warnings, attrs} =
       Enum.flat_map_reduce(attrs_defs, attrs, fn attr_def, attrs ->
         %{name: name, required: required, type: type} = attr_def
@@ -159,7 +159,7 @@ defmodule Mix.Tasks.Compile.LiveView do
   defp error(message, file, line) do
     # TODO: Provide column information in diagnostic once we depend on Elixir v1.13+
     %Diagnostic{
-      compiler_name: "live_view",
+      compiler_name: "phoenix_live_view",
       file: file,
       message: message,
       position: line,
