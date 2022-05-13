@@ -30,12 +30,13 @@ defmodule Phoenix.LiveView.Helpers do
   end
 
   @doc ~S'''
-  Provides `~H` sigil with HTML-safe and HTML-aware syntax inside source files.
+  The `~H` sigil for writing HEEx templates inside source files.
 
   > Note: The HEEx HTML formatter requires Elixir >= 1.13.4. See the
   > `Phoenix.LiveView.HTMLFormatter` for more information on template formatting.
 
-  `HEEx` is a HTML-aware and component-friendly extension of `EEx` that provides:
+  `HEEx` is a HTML-aware and component-friendly extension of Elixir Embedded
+  language (`EEx`) that provides:
 
     * Built-in handling of HTML attributes
     * An HTML-like notation for injecting function components
@@ -53,9 +54,8 @@ defmodule Phoenix.LiveView.Helpers do
 
   ## Syntax
 
-  `HEEx` is built on top of Embedded Elixir (`EEx`), a templating syntax that uses
-  `<%= ... %>` for interpolating results. In this section, we are going to cover the
-  basic constructs in `HEEx` templates as well as its syntax extensions.
+  `HEEx` is built on top of Embedded Elixir (`EEx`). In this section, we are going to
+  cover the basic constructs in `HEEx` templates as well as its syntax extensions.
 
   ### Interpolation
 
@@ -132,7 +132,7 @@ defmodule Phoenix.LiveView.Helpers do
 
   The above would add all caller attributes into the HTML, but strip out LiveView
   assigns like slots, as well as user-defined assigns like `:visible` that are not
-  meant to be added to the HTML itself. This appraoch is useful to allow a component
+  meant to be added to the HTML itself. This approach is useful to allow a component
   to accept arbitrary HTML attributes like class, ARIA attributes, etc.
 
   ### HEEx extension: Defining function components
@@ -172,6 +172,43 @@ defmodule Phoenix.LiveView.Helpers do
   opposed to having many modules with a single `render/1` function. Function
   components support other important features, such as slots. You can learn
   more about components in `Phoenix.Component`.
+
+  ### HEEx extension: special attributes
+
+  Apart from normal HTML attributes, HEEx also support some special attributes
+  such as `:let` and `:for`.
+
+  #### :let
+
+  This is used by components and slots that want to yield a value back to the
+  caller. For an example, see how `form/1` works:
+
+  ```heex
+  <.form :let={f} for={@changeset} phx-change="validate" phx-submit="save">
+    <%= label(f, :username) %>
+    <%= text_input(f, :username) %>
+    ...
+  </.form>
+  ```
+
+  Notice how the variable `f`, defined by `.form`, is used by `label` and
+  `text_input`. The `Phoenix.Component` module has detailed documentation on
+  how to use and implement such functionality.
+
+  #### :for
+
+  It is a syntax sugar for `<%= for .. do %>` that can be used only in regular HTML
+  tags, therefore `:for` will not work on components.
+
+  ```heex
+  <table id="my-table">
+    <tr :for={user <- @users}>
+      <td><%= user.name %>
+    </tr>
+  <table>
+  ```
+
+  The snippet above will generate a `tr` per user as you would expect.
   '''
   defmacro sigil_H({:<<>>, meta, [expr]}, []) do
     unless Macro.Env.has_var?(__CALLER__, {:assigns, nil}) do
@@ -221,9 +258,9 @@ defmodule Phoenix.LiveView.Helpers do
         </a>
         """
       end
-      
+
   The above would result in the following rendered HTML:
-  
+
       <a href="/" target="_blank" id="1" class="my-class">Home</a>
 
   The second argument (optional) to `assigns_to_attributes` is a list of keys to
