@@ -2,15 +2,12 @@ defmodule Phoenix.LiveView.Helpers do
   @moduledoc """
   A collection of helpers to be imported into your views.
   """
+  use Phoenix.Component
 
   # TODO: Convert all functions with the `live_` prefix to function components?
 
   alias Phoenix.LiveView
   alias Phoenix.LiveView.{Component, Socket, Static}
-
-
-  @doc false
-  def __reserved_assigns__, do: [:__changed__, :__slot__, :inner_block, :myself, :flash, :socket]
 
   @doc """
   Provides `~L` sigil with HTML safe Live EEx syntax inside source files.
@@ -272,42 +269,17 @@ defmodule Phoenix.LiveView.Helpers do
   do not belong in the markup, or are already handled explicitly by the component.
   '''
   def assigns_to_attributes(assigns, exclude \\ []) do
-    excluded_keys = __reserved_assigns__() ++ exclude
+    excluded_keys = Phoenix.Component.__reserved_assigns__() ++ exclude
     for {key, val} <- assigns, key not in excluded_keys, into: [], do: {key, val}
   end
 
-  @doc false
+  @doc deprecated: "Use link/1 instead"
+  # TODO @deprecate in 0.19, remove in 0.20
   def live_patch(opts) when is_list(opts) do
     live_link("patch", Keyword.fetch!(opts, :do), Keyword.delete(opts, :do))
   end
 
-  @doc """
-  Generates a link that will patch the current LiveView.
-
-  When navigating to the current LiveView,
-  `c:Phoenix.LiveView.handle_params/3` is
-  immediately invoked to handle the change of params and URL state.
-  Then the new state is pushed to the client, without reloading the
-  whole page while also maintaining the current scroll position.
-  For live redirects to another LiveView, use `live_redirect/2`.
-
-  ## Options
-
-    * `:to` - the required path to link to.
-    * `:replace` - the flag to replace the current history or push a new state.
-      Defaults `false`.
-
-  All other options are forwarded to the anchor tag.
-
-  ## Examples
-
-      <%= live_patch "home", to: Routes.page_path(@socket, :index) %>
-      <%= live_patch "next", to: Routes.live_path(@socket, MyLive, @page + 1) %>
-      <%= live_patch to: Routes.live_path(@socket, MyLive, dir: :asc), replace: false do %>
-        Sort By Price
-      <% end %>
-
-  """
+  @doc deprecated: "Use <.link> instead"
   def live_patch(text, opts)
 
   def live_patch(%Socket{}, _) do
@@ -327,41 +299,13 @@ defmodule Phoenix.LiveView.Helpers do
     live_link("patch", text, opts)
   end
 
-  @doc false
+  @doc deprecated: "Use <.link> instead"
+  # TODO @deprecate in 0.19, remove in 0.20
   def live_redirect(opts) when is_list(opts) do
     live_link("redirect", Keyword.fetch!(opts, :do), Keyword.delete(opts, :do))
   end
 
-  @doc """
-  Generates a link that will redirect to a new LiveView of the same live session.
-
-  The current LiveView will be shut down and a new one will be mounted
-  in its place, without reloading the whole page. This can
-  also be used to remount the same LiveView, in case you want to start
-  fresh. If you want to navigate to the same LiveView without remounting
-  it, use `live_patch/2` instead.
-
-  *Note*: The live redirects are only supported between two LiveViews defined
-  under the same live session. See `Phoenix.LiveView.Router.live_session/3` for
-  more details.
-
-  ## Options
-
-    * `:to` - the required path to link to.
-    * `:replace` - the flag to replace the current history or push a new state.
-      Defaults `false`.
-
-  All other options are forwarded to the anchor tag.
-
-  ## Examples
-
-      <%= live_redirect "home", to: Routes.page_path(@socket, :index) %>
-      <%= live_redirect "next", to: Routes.live_path(@socket, MyLive, @page + 1) %>
-      <%= live_redirect to: Routes.live_path(@socket, MyLive, dir: :asc), replace: false do %>
-        Sort By Price
-      <% end %>
-
-  """
+  @doc deprecated: "Use <.link> instead"
   def live_redirect(text, opts)
 
   def live_redirect(%Socket{}, _) do
@@ -1004,6 +948,15 @@ defmodule Phoenix.LiveView.Helpers do
     )
   end
 
+  attr :prefix, :string, default: false
+  attr :suffix, :string, default: false
+
+  def live_title(assigns) do
+    ~H"""
+    <title data-prefix={@prefix} data-suffix={@suffix}><%= @prefix || "" %><%= render_slot(@inner_block) %><%= @suffix || "" %></title>
+    """
+  end
+
   @doc """
   Renders a title tag with automatic prefix/suffix on `@page_title` updates.
 
@@ -1013,6 +966,8 @@ defmodule Phoenix.LiveView.Helpers do
 
       <%= live_title_tag assigns[:page_title] || "Welcome", suffix: " – MyApp" %>
   """
+  @doc deprecated: "Use <.live_title> instead"
+  # TODO deprecate in 0.19, remove in 0.20
   def live_title_tag(title, opts \\ []) do
     title_tag(title, opts[:prefix], opts[:suffix], opts)
   end
@@ -1114,13 +1069,13 @@ defmodule Phoenix.LiveView.Helpers do
         <%= submit "Save" %>
       </.form>
 
-  However, if you don't have a data layer, it may be more straight-forward
-  to drop the `form` component altogether and simply rely on HTML:
+  In those cases, it may be more straight-forward to drop `:let` altogether
+  and simply rely on HTML to generate inputs:
 
-      <form multipart phx-change="change_user" phx-submit="save_user">
+      <.form for={:form} multipart phx-change="change_user" phx-submit="save_user">
         <input type="text" name="user[name]" value={@user_name}>
         <input type="submit" name="Save">
-      </form>
+      </.form>
 
   ### Outside LiveView
 
@@ -1133,6 +1088,14 @@ defmodule Phoenix.LiveView.Helpers do
         <%= text_input f, :body %>
       </.form>
   """
+  attr :for, :any, required: true
+  attr :action, :string, default: nil
+  attr :as, :atom
+  attr :multipart, :boolean, default: false
+  attr :method, :string
+  attr :csrf_token, :boolean
+  attr :errors, :list
+
   def form(assigns) do
     # Extract options and then to the same call as form_for
     action = assigns[:action]
@@ -1150,7 +1113,7 @@ defmodule Phoenix.LiveView.Helpers do
     # unless the action is given.
     {attrs, hidden_method, csrf_token} =
       if action do
-        {method, opts} = Keyword.pop(opts, :method, "post")
+        {method, opts} = Keyword.pop(opts, :method)
         {method, hidden_method} = form_method(method)
 
         {csrf_token, opts} =
@@ -1194,6 +1157,81 @@ defmodule Phoenix.LiveView.Helpers do
 
   defp form_method(method) when method in ~w(get post), do: {method, nil}
   defp form_method(method) when is_binary(method), do: {"post", method}
+
+  @doc """
+  Generates a link for live and href navigation.
+
+  There are three possible types of links, in the order of efficiency:
+
+    * `:href` - uses traditional browser navigation to the new location.
+      This means the whole page is reloaded on the browser.
+
+    * `:navigate` - navigates from a LiveView to a new LiveView. The browser
+      page is kept, but a new LiveView process is mounted and its content
+      on the page reloaded. It is only possible to navigate between LiveViews
+      declared under the same router `Phoenix.LiveView.Router.live_session/3`.
+      Otherwise a full browser redirect is used.
+
+    * `:patch` - patches the current LiveView. The `handle_params` callback
+      of the current LiveView will be invoked and the minimum content will be
+      sent over there wire, as any other LiveView diff.
+
+  ## Attributes
+
+     * `:replace` - when using `:patch` or `:navigate`, whether to replace the
+       browser's pushState history. Default false.
+
+  Arbitrary global attributes, such as `class`, `id`, etc, will be applied to the
+  generated `a` tag.
+
+  ## Examples
+
+      <.link href="/">Regular anchor link</.link>
+
+      <.link navigate={Routes.page_path(@socket, :index)} class="underline">home</.link>
+
+      <.link navigate={Routes.live_path(@socket, MyLive, dir: :asc)} replace={false}>
+        Sort By Price
+      </.link>
+
+      <.link patch={Routes.page_path(@socket, :index, :details)}>view details</.link>
+
+  """
+
+  attr :navigate, :string
+  attr :patch, :string
+  attr :href, :string, default: nil
+  attr :replace, :string, default: false
+  attr :rest, :global
+
+  def link(%{navigate: _to} = assigns) do
+    ~H"""
+    <a
+      href={@navigate}
+      data-phx-link="redirect"
+      data-phx-link-state="push"
+      data-phx-link-state={if @replace, do: "replace", else: "push"}
+      {@rest}
+    ><%= render_slot(@inner_block) %></a>
+    """
+  end
+
+  def link(%{patch: _to} = assigns) do
+    ~H"""
+    <a
+      href={@patch}
+      data-phx-link="patch"
+      data-phx-link-state={if @replace, do: "replace", else: "push"}
+      {@rest}
+    ><%= render_slot(@inner_block) %></a>
+    """
+  end
+
+  def link(%{} = assigns) do
+    ~H"""
+    <a href={@href || "#"} {@rest}><%= render_slot(@inner_block) %></a>
+    """
+  end
 
   defp is_assign?(assign_name, expression) do
     match?({:@, _, [{^assign_name, _, _}]}, expression) or

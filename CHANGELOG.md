@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.0
+
+### Deprecations
+  - `live_redirect` - deprecate in favor of new `<link redirect={..}>` component of `Phoenix.LiveView.Helpers`
+  - `live_patch` - deprecate in favor of new `<link patch={..}>` component of `Phoenix.LiveView.Helpers`
+  - `push_redirect` - deprecate in favor of new `push_navigate` function on `Phoenix.LiveView`
+
 ## 0.17.10 (Unreleased)
 
 ### Bug fixes

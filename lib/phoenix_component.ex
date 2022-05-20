@@ -395,6 +395,7 @@ defmodule Phoenix.Component do
     lang
     nonce
     part
+    role
     slot
     spellcheck
     style
@@ -423,20 +424,30 @@ defmodule Phoenix.Component do
   def __global__?(_), do: false
 
   @doc false
+  def __reserved_assigns__, do: [:__changed__, :__slot__, :inner_block, :myself, :flash, :socket]
+
+  @doc false
   defmacro __using__(opts \\ []) do
-    quote bind_quoted: [opts: opts] do
-      import Kernel, except: [def: 2, defp: 2]
-      import Phoenix.Component
-      import Phoenix.LiveView
-      import Phoenix.LiveView.Helpers
-      global_prefixes = Phoenix.Component.__setup__(__MODULE__, opts)
-      @doc false
-      for prefix <- global_prefixes do
-        def __global__?(unquote(prefix) <> _), do: true
+    conditional =
+      if __CALLER__.module != Phoenix.LiveView.Helpers do
+        quote do: import(Phoenix.LiveView.Helpers)
       end
 
-      def __global__?(_), do: false
-    end
+    imports =
+      quote bind_quoted: [opts: opts] do
+        import Kernel, except: [def: 2, defp: 2]
+        import Phoenix.Component
+        import Phoenix.LiveView
+
+        @doc false
+        for prefix <- Phoenix.Component.__setup__(__MODULE__, opts) do
+          def __global__?(unquote(prefix) <> _), do: true
+        end
+
+        def __global__?(_), do: false
+      end
+
+    [conditional, imports]
   end
 
   @doc false
@@ -702,8 +713,7 @@ defmodule Phoenix.Component do
             nil -> {nil, nil}
           end
 
-        known_keys =
-          for(attr <- attrs, do: attr.name) ++ Phoenix.LiveView.Helpers.__reserved_assigns__()
+        known_keys = for(attr <- attrs, do: attr.name) ++ __reserved_assigns__()
 
         def_body =
           if global_name do
