@@ -17,7 +17,7 @@ end
 ```
 
 0.18.0 includes a number of new function components which replace their EEx expression counterparts `<%= ... %>`.
-For example, `live_rediret`, `live_patch`, and Phoenix.HTML's `link` have been replaced by a unified
+For example, `live_redirect`, `live_patch`, and Phoenix.HTML's `link` have been replaced by a unified
 `Phoenix.LiveView.Helpers.link/1` function component:
 
     <.link href="https://myapp.com">my app</.link>
@@ -37,6 +37,10 @@ Additionally, the special `let` attribute on function components have been depre
   - [Helpers] Add `dynamic_tag` function component
   - [Helpers] Add `link` function component
   - Add new attrs `:let` and `:for`. We still support `let` but the Formatter will convert it to `:let` and soon it will be deprecated.
+  - Support sharing `Phoenix.LiveView.Socket` with regular channels via `use Phoenix.LiveView.Socket`
+
+### Bug fixes
+  - Fix external upload issue where listeners are not cleaned up when an external failure happens on the client
 
 ## 0.17.10 (2022-05-25)
 
