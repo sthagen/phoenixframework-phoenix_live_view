@@ -1237,6 +1237,8 @@ defmodule Phoenix.LiveView do
     * `:to` - the path to redirect to. It must always be a local path
     * `:external` - an external path to redirect to
   """
+  def redirect(socket, opts \\ [])
+
   def redirect(%Socket{} = socket, to: url) do
     validate_local_url!(url, "redirect/2")
     put_redirect(socket, {:redirect, %{to: url}})
@@ -1619,7 +1621,7 @@ defmodule Phoenix.LiveView do
         ...
         pid = self()
 
-        Task.async(fn ->
+        Task.start(fn ->
           # Do something asynchronously
           send_update(pid, Cart, id: "cart", status: "cancelled")
         end)
@@ -1652,7 +1654,7 @@ defmodule Phoenix.LiveView do
         ...
         pid = self()
 
-        Task.async(fn ->
+        Task.start(fn ->
           # Do something asynchronously
           send_update_after(pid, Cart, [id: "cart", status: "cancelled"], 3000)
         end)
