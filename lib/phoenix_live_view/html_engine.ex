@@ -107,7 +107,8 @@ defmodule Phoenix.LiveView.HTMLEngine do
       module: module,
       file: Keyword.get(opts, :file, "nofile"),
       indentation: Keyword.get(opts, :indentation, 0),
-      caller: Keyword.get(opts, :caller)
+      caller: Keyword.get(opts, :caller),
+      previous_token_slot?: false
     }
   end
 
@@ -165,7 +166,8 @@ defmodule Phoenix.LiveView.HTMLEngine do
       slots: [],
       module: module,
       caller: caller,
-      root: root
+      root: root,
+      previous_token_slot?: false
     }
   end
 
@@ -207,7 +209,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
   end
 
   defp update_subengine(state, fun, args) do
-    %{state | substate: invoke_subengine(state, fun, args)}
+    %{state | substate: invoke_subengine(state, fun, args), previous_token_slot?: false}
   end
 
   defp init_slots(state) do
@@ -221,7 +223,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
          _meta
        )
        when first in ?A..?Z or first == ?. do
-    %{state | slots: [[slot | slots] | other_slots]}
+    %{state | slots: [[slot | slots] | other_slots], previous_token_slot?: true}
   end
 
   defp add_slot!(state, slot, meta) do
@@ -297,9 +299,15 @@ defmodule Phoenix.LiveView.HTMLEngine do
   # Text
 
   defp handle_token({:text, text, %{line_end: line, column_end: column}}, state) do
-    state
-    |> set_root_on_not_tag()
-    |> update_subengine(:handle_text, [[line: line, column: column], text])
+    text = if state.previous_token_slot?, do: String.trim_leading(text), else: text
+
+    if text == "" do
+      state
+    else
+      state
+      |> set_root_on_not_tag()
+      |> update_subengine(:handle_text, [[line: line, column: column], text])
+    end
   end
 
   # Remote function component (self close)
@@ -649,8 +657,11 @@ defmodule Phoenix.LiveView.HTMLEngine do
   end
 
   defp handle_attr_escape(state, meta, name, value) do
-    case extract_binaries(value, true, []) do
+    # See if we can emit anything about the attribute at compile-time.
+    case extract_compile_attr(name, value) do
       :error ->
+        # Now if the attribute can be encoded as empty whenever
+        # it is false or nil, we also emit its text before hand.
         if call = empty_attribute_encoder(name, value, meta) do
           state
           |> update_subengine(:handle_text, [meta, ~s( #{name}=")])
@@ -660,20 +671,20 @@ defmodule Phoenix.LiveView.HTMLEngine do
           handle_attrs_escape(state, meta, [{safe_unless_special(name), value}])
         end
 
-      binaries ->
+      parts ->
         state
         |> update_subengine(:handle_text, [meta, ~s( #{name}=")])
-        |> handle_binaries(meta, binaries)
+        |> handle_compile_attrs(meta, parts)
         |> update_subengine(:handle_text, [meta, ~s(")])
     end
   end
 
-  defp handle_binaries(state, meta, binaries) do
+  defp handle_compile_attrs(state, meta, binaries) do
     binaries
     |> Enum.reverse()
     |> Enum.reduce(state, fn
       {:text, value}, state ->
-        update_subengine(state, :handle_text, [meta, binary_encode(value)])
+        update_subengine(state, :handle_text, [meta, value])
 
       {:binary, value}, state ->
         ast =
@@ -682,7 +693,31 @@ defmodule Phoenix.LiveView.HTMLEngine do
           end
 
         update_subengine(state, :handle_expr, ["=", ast])
+
+      {:class, value}, state ->
+        ast =
+          quote line: meta[:line] do
+            {:safe, unquote(__MODULE__).class_attribute_encode(unquote(value))}
+          end
+
+        update_subengine(state, :handle_expr, ["=", ast])
     end)
+  end
+
+  defp extract_compile_attr("class", [head | tail]) when is_binary(head) do
+    {bins, tail} = Enum.split_while(tail, &is_binary/1)
+    encoded = class_attribute_encode([head | bins])
+
+    if tail == [] do
+      [{:text, IO.iodata_to_binary(encoded)}]
+    else
+      # We need to return it in reverse order as they are reversed later on.
+      [{:class, tail}, {:text, IO.iodata_to_binary([encoded, ?\s])}]
+    end
+  end
+
+  defp extract_compile_attr(_name, value) do
+    extract_binaries(value, true, [])
   end
 
   defp extract_binaries({:<>, _, [left, right]}, _root?, acc) do
@@ -692,7 +727,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp extract_binaries({:<<>>, _, parts} = bin, _root?, acc) do
     Enum.reduce(parts, acc, fn
       part, acc when is_binary(part) ->
-        [{:text, part} | acc]
+        [{:text, binary_encode(part)} | acc]
 
       {:"::", _, [binary, {:binary, _, _}]}, acc ->
         [{:binary, binary} | acc]
@@ -704,9 +739,14 @@ defmodule Phoenix.LiveView.HTMLEngine do
     :unknown_part -> [{:binary, bin} | acc]
   end
 
-  defp extract_binaries(binary, _root?, acc) when is_binary(binary), do: [{:text, binary} | acc]
-  defp extract_binaries(value, false, acc), do: [{:binary, value} | acc]
-  defp extract_binaries(_value, true, _acc), do: :error
+  defp extract_binaries(binary, _root?, acc) when is_binary(binary),
+    do: [{:text, binary_encode(binary)} | acc]
+
+  defp extract_binaries(value, false, acc),
+    do: [{:binary, value} | acc]
+
+  defp extract_binaries(_value, true, _acc),
+    do: :error
 
   # TODO: We can refactor the empty_attribute_encoder to simply return an atom on Elixir v1.13+
   defp empty_attribute_encoder("class", value, meta) do
@@ -720,11 +760,22 @@ defmodule Phoenix.LiveView.HTMLEngine do
   defp empty_attribute_encoder(_, _, _), do: nil
 
   @doc false
-  def class_attribute_encode([_ | _] = list),
-    do: list |> Enum.filter(& &1) |> Enum.join(" ") |> Phoenix.HTML.Engine.encode_to_iodata!()
+  def class_attribute_encode(list) when is_list(list),
+    do: list |> class_attribute_list() |> Phoenix.HTML.Engine.encode_to_iodata!()
 
   def class_attribute_encode(other),
     do: empty_attribute_encode(other)
+
+  defp class_attribute_list(value) do
+    value
+    |> Enum.flat_map(fn
+      nil -> []
+      false -> []
+      inner when is_list(inner) -> [class_attribute_list(inner)]
+      other -> [other]
+    end)
+    |> Enum.join(" ")
+  end
 
   @doc false
   def empty_attribute_encode(nil), do: ""
