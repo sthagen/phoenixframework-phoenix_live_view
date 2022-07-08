@@ -148,6 +148,7 @@ export default class LiveSocket {
     this.hooks = opts.hooks || {}
     this.uploaders = opts.uploaders || {}
     this.loaderTimeout = opts.loaderTimeout || LOADER_TIMEOUT
+    this.reloadWithJitterTimer = null
     this.maxReloads = opts.maxReloads || MAX_RELOADS
     this.reloadJitterMin = opts.reloadJitterMin || RELOAD_JITTER_MIN
     this.reloadJitterMax = opts.reloadJitterMax || RELOAD_JITTER_MAX
@@ -206,6 +207,8 @@ export default class LiveSocket {
       if(this.joinRootViews()){
         this.bindTopLevelEvents()
         this.socket.connect()
+      } else if(this.main){
+        this.socket.connect()
       }
     }
     if(["complete", "loaded", "interactive"].indexOf(document.readyState) >= 0){
@@ -215,7 +218,16 @@ export default class LiveSocket {
     }
   }
 
-  disconnect(callback){ this.socket.disconnect(callback) }
+  disconnect(callback){
+    clearTimeout(this.reloadWithJitterTimer)
+    this.socket.disconnect(callback)
+  }
+
+  replaceTransport(transport){
+    clearTimeout(this.reloadWithJitterTimer)
+    this.socket.replaceTransport(transport)
+    this.connect()
+  }
 
   execJS(el, encodedJS, eventType = null){
     this.owner(el, view => JS.exec(eventType, encodedJS, view, el))
@@ -293,18 +305,23 @@ export default class LiveSocket {
   }
 
   reloadWithJitter(view, log){
-    view.destroy()
+    clearTimeout(this.reloadWithJitterTimer)
     this.disconnect()
     let minMs = this.reloadJitterMin
     let maxMs = this.reloadJitterMax
     let afterMs = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
     let tries = Browser.updateLocal(this.localStorage, window.location.pathname, CONSECUTIVE_RELOADS, 0, count => count + 1)
-    log ? log() : this.log(view, "join", () => [`encountered ${tries} consecutive reloads`])
     if(tries > this.maxReloads){
-      this.log(view, "join", () => [`exceeded ${this.maxReloads} consecutive reloads. Entering failsafe mode`])
       afterMs = this.failsafeJitter
     }
-    setTimeout(() => {
+    this.reloadWithJitterTimer = setTimeout(() => {
+      // if view has recovered, such as transport replaced, then cancel
+      if(view.isDestroyed() || view.isConnected()){ return }
+      view.destroy()
+      log ? log() : this.log(view, "join", () => [`encountered ${tries} consecutive reloads`])
+      if(tries > this.maxReloads){
+        this.log(view, "join", () => [`exceeded ${this.maxReloads} consecutive reloads. Entering failsafe mode`])
+      }
       if(this.hasPendingLink()){
         window.location = this.pendingLink
       } else {
@@ -361,7 +378,7 @@ export default class LiveSocket {
           DOM.findPhxSticky(document).forEach(el => newMainEl.appendChild(el))
           this.outgoingMainEl.replaceWith(newMainEl)
           this.outgoingMainEl = null
-          callback && callback()
+          callback && requestAnimationFrame(callback)
           onDone()
         })
       }
@@ -407,6 +424,7 @@ export default class LiveSocket {
       this.roots[id].destroy()
       delete this.roots[id]
     }
+    this.main = null
   }
 
   destroyViewByEl(el){
