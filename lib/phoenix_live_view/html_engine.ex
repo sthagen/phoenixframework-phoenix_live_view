@@ -8,9 +8,55 @@ defmodule Phoenix.LiveView.HTMLEngine do
   """
 
   @doc """
+  Renders a component defined by the given function.
+
+  This function is rarely invoked directly by users. Instead, it is used by `~H`
+  to render `Phoenix.Component`s. For example, the following:
+
+      <MyApp.Weather.city name="Kraków" />
+
+  Is the same as:
+
+      <%= component(
+            &MyApp.Weather.city/1,
+            [name: "Kraków"],
+            {__ENV__.module, __ENV__.function, __ENV__.file, __ENV__.line}
+          ) %>
+
+  """
+  def component(func, assigns, caller)
+      when (is_function(func, 1) and is_list(assigns)) or is_map(assigns) do
+    assigns =
+      case assigns do
+        %{__changed__: _} -> assigns
+        _ -> assigns |> Map.new() |> Map.put_new(:__changed__, nil)
+      end
+
+    case func.(assigns) do
+      %Phoenix.LiveView.Rendered{} = rendered ->
+        %{rendered | caller: caller}
+
+      %Phoenix.LiveView.Component{} = component ->
+        component
+
+      other ->
+        raise RuntimeError, """
+        expected #{inspect(func)} to return a %Phoenix.LiveView.Rendered{} struct
+
+        Ensure your render function uses ~H to define its template.
+
+        Got:
+
+            #{inspect(other)}
+
+        """
+    end
+  end
+
+  @doc """
   Define a inner block, generally used by slots.
 
-  This macro is mostly used by HTML engines that provides
+  This macro is mostly used by HTML engines that provide
   a `slot` implementation and rarely called directly. The
   `name` must be the assign name the slot/block will be stored
   under.
@@ -328,7 +374,11 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     ast =
       quote line: tag_meta.line do
-        Phoenix.LiveView.Helpers.component(&(unquote(mod_ast).unquote(fun) / 1), unquote(assigns))
+        Phoenix.LiveView.HTMLEngine.component(
+          &(unquote(mod_ast).unquote(fun) / 1),
+          unquote(assigns),
+          {__MODULE__, __ENV__.function, __ENV__.file, unquote(tag_meta.line)}
+        )
       end
 
     state
@@ -364,7 +414,11 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     ast =
       quote line: line do
-        Phoenix.LiveView.Helpers.component(&(unquote(mod_ast).unquote(fun) / 1), unquote(assigns))
+        Phoenix.LiveView.HTMLEngine.component(
+          &(unquote(mod_ast).unquote(fun) / 1),
+          unquote(assigns),
+          {__MODULE__, __ENV__.function, __ENV__.file, unquote(line)}
+        )
       end
 
     state
@@ -387,9 +441,10 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     ast =
       quote line: line do
-        Phoenix.LiveView.Helpers.component(
+        Phoenix.LiveView.HTMLEngine.component(
           &(unquote(Macro.var(fun, __MODULE__)) / 1),
-          unquote(assigns)
+          unquote(assigns),
+          {__MODULE__, __ENV__.function, __ENV__.file, unquote(line)}
         )
       end
 
@@ -482,9 +537,10 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
     ast =
       quote line: line do
-        Phoenix.LiveView.Helpers.component(
+        Phoenix.LiveView.HTMLEngine.component(
           &(unquote(Macro.var(fun, __MODULE__)) / 1),
-          unquote(assigns)
+          unquote(assigns),
+          {__MODULE__, __ENV__.function, __ENV__.file, unquote(line)}
         )
       end
 
