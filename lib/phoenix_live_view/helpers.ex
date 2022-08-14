@@ -624,6 +624,8 @@ defmodule Phoenix.LiveView.Helpers do
 
       <%= render_slot(@inner_block, @form) %>
 
+  If the slot has no entries, nil is returned.
+
   If multiple slot entries are defined for the same slot,
   `render_slot/2` will automatically render all entries,
   merging their contents. In case you want to use the entries'
@@ -681,7 +683,7 @@ defmodule Phoenix.LiveView.Helpers do
   end
 
   @doc false
-  def __render_slot__(_, [], _), do: ""
+  def __render_slot__(_, [], _), do: nil
 
   def __render_slot__(changed, [entry], argument) do
     call_inner_block!(entry, changed, argument)
@@ -889,12 +891,12 @@ defmodule Phoenix.LiveView.Helpers do
       <.live_title suffix="- MyApp"><%= assigns[:page_title] || "Welcome" %></.live_title>
 
   """
-  attr :prefix, :string, default: false
-  attr :suffix, :string, default: false
+  attr :prefix, :string, default: nil
+  attr :suffix, :string, default: nil
 
   def live_title(assigns) do
     ~H"""
-    <title data-prefix={@prefix} data-suffix={@suffix}><%= @prefix || "" %><%= render_slot(@inner_block) %><%= @suffix || "" %></title>
+    <title data-prefix={@prefix} data-suffix={@suffix}><%= @prefix %><%= render_slot(@inner_block) %><%= @suffix %></title>
     """
   end
 
@@ -1110,7 +1112,6 @@ defmodule Phoenix.LiveView.Helpers do
     * `:csrf_token` - a custom token to use for links with a method
       other than `:get`.
 
-
      * `:replace` - when using `:patch` or `:navigate`, whether to replace the
        browser's pushState history. Default false.
 
@@ -1198,8 +1199,8 @@ defmodule Phoenix.LiveView.Helpers do
   attr :navigate, :string
   attr :patch, :string
   attr :href, :any
-  attr :replace, :string, default: false
-  attr :method, :atom, default: "get"
+  attr :replace, :boolean, default: false
+  attr :method, :string, default: "get"
   attr :csrf_token, :string
   attr :rest, :global
 
@@ -1208,7 +1209,6 @@ defmodule Phoenix.LiveView.Helpers do
     <a
       href={@navigate}
       data-phx-link="redirect"
-      data-phx-link-state="push"
       data-phx-link-state={if @replace, do: "replace", else: "push"}
       {@rest}
     ><%= render_slot(@inner_block) %></a>
@@ -1239,8 +1239,6 @@ defmodule Phoenix.LiveView.Helpers do
         href ->
           assign(assigns, :href, href)
       end
-
-    assigns = assign(assigns, :method, to_string(assigns.method))
 
     ~H"""
     <a
