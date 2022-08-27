@@ -3,7 +3,7 @@ defmodule Phoenix.Component do
   Define reusable function components with HEEx templates.
 
   A function component is any function that receives an assigns map as an argument and returns 
-  a rendered struct built with [the `~H` sigil](`Phoenix.LiveView.Helpers.sigil_H/2`):
+  a rendered struct built with [the `~H` sigil](`sigil_H/2`):
 
       defmodule MyComponent do
         use Phoenix.Component
@@ -164,7 +164,7 @@ defmodule Phoenix.Component do
   Now all function components defined in this module will accept any number of attributes prefixed
   with `x-`, in addition to the default global prefixes.
 
-  You can learn more about attributes by reading the documentation for `Phoenix.Component.attr/3`.
+  You can learn more about attributes by reading the documentation for `attr/3`.
 
   ## Slots
 
@@ -207,7 +207,7 @@ defmodule Phoenix.Component do
   ### The Default Slot
 
   The example above uses the default slot, accesible as an assign named `@inner_block`, to render 
-  HEEx content via the `Phoenix.LiveView.Helpers.render_slot/2` function.
+  HEEx content via the `render_slot/2` function.
 
   If the values rendered in the slot need to be dynamic, you can pass a second value back to the
   HEEx content by calling `render_slot/2`:
@@ -299,8 +299,7 @@ defmodule Phoenix.Component do
 
   Unlike the default slot, it is possible to pass a named slot multiple pieces of HEEx content. 
   Named slots can also accept attributes, defined by passing a block to the `slot/3` macro. 
-  If multiple pieces of content are passed,`Phoenix.LiveView.Helpers.render_slot/2` will merge 
-  and render all the values.
+  If multiple pieces of content are passed, `render_slot/2` will merge and render all the values.
 
   Below is a table component illustrating multiple named slots with attributes:
 
@@ -357,8 +356,867 @@ defmodule Phoenix.Component do
         </tr>
       </table>
 
-  You can learn more about slots and the `slot/3` macro [in its documentation](`Phoenix.Component.slot/3`).
+  You can learn more about slots and the `slot/3` macro [in its documentation](`slot/3`).
   '''
+
+  ## Functions
+
+  alias Phoenix.LiveView.{Static, Socket}
+
+  @reserved_assigns [:__changed__, :__slot__, :inner_block, :myself, :flash, :socket]
+
+  @doc ~S'''
+  The `~H` sigil for writing HEEx templates inside source files.
+
+  > Note: The HEEx HTML formatter requires Elixir >= 1.13.4. See the
+  > `Phoenix.LiveView.HTMLFormatter` for more information on template formatting.
+
+  `HEEx` is a HTML-aware and component-friendly extension of Elixir Embedded
+  language (`EEx`) that provides:
+
+    * Built-in handling of HTML attributes
+    * An HTML-like notation for injecting function components
+    * Compile-time validation of the structure of the template
+    * The ability to minimize the amount of data sent over the wire
+
+  ## Example
+
+      ~H"""
+      <div title="My div" class={@class}>
+        <p>Hello <%= @name %></p>
+        <MyApp.Weather.city name="Kraków"/>
+      </div>
+      """
+
+  ## Syntax
+
+  `HEEx` is built on top of Embedded Elixir (`EEx`). In this section, we are going to
+  cover the basic constructs in `HEEx` templates as well as its syntax extensions.
+
+  ### Interpolation
+
+  Both `HEEx` and `EEx` templates use `<%= ... %>` for interpolating code inside the body
+  of HTML tags:
+
+      <p>Hello, <%= @name %></p>
+
+  Similarly, conditionals and other block Elixir constructs are supported:
+
+      <%= if @show_greeting? do %>
+        <p>Hello, <%= @name %></p>
+      <% end %>
+
+  Note we don't include the equal sign `=` in the closing `<% end %>` tag
+  (because the closing tag does not output anything).
+
+  There is one important difference between `HEEx` and Elixir's builtin `EEx`.
+  `HEEx` uses a specific annotation for interpolating HTML tags and attributes.
+  Let's check it out.
+
+  ### HEEx extension: Defining attributes
+
+  Since `HEEx` must parse and validate the HTML structure, code interpolation using
+  `<%= ... %>` and `<% ... %>` are restricted to the body (inner content) of the
+  HTML/component nodes and it cannot be applied within tags.
+
+  For instance, the following syntax is invalid:
+
+      <div class="<%= @class %>">
+        ...
+      </div>
+
+  Instead do:
+
+      <div class={@class}>
+        ...
+      </div>
+
+  You can put any Elixir expression between `{ ... }`. For example, if you want
+  to set classes, where some are static and others are dynamic, you can using
+  string interpolation:
+
+      <div class={"btn btn-#{@type}"}>
+        ...
+      </div>
+
+  The following attribute values have special meaning:
+
+    * `true` - if a value is `true`, the attribute is rendered with no value at all.
+      For example, `<input required={true}>` is the same as `<input required>`;
+
+    * `false` or `nil` - if a value is `false` or `nil`, the attribute is not rendered;
+
+    * `list` (only for the `class` attribute) - each element of the list is processed
+      as a different class. `nil` and `false` elements are discarded.
+
+  For multiple dynamic attributes, you can use the same notation but without
+  assigning the expression to any specific attribute.
+
+      <div {@dynamic_attrs}>
+        ...
+      </div>
+
+  The expression inside `{...}` must be either a keyword list or a map containing
+  the key-value pairs representing the dynamic attributes.
+
+  You can pair this notation `assigns_to_attributes/2` to strip out any internal
+  LiveView attributes and user-defined assigns from being expanded into the HTML tag:
+
+      <div {assigns_to_attributes(assigns, [:visible])}>
+        ...
+      </div>
+
+  The above would add all caller attributes into the HTML, but strip out LiveView
+  assigns like slots, as well as user-defined assigns like `:visible` that are not
+  meant to be added to the HTML itself. This approach is useful to allow a component
+  to accept arbitrary HTML attributes like class, ARIA attributes, etc.
+
+  ### HEEx extension: Defining function components
+
+  Function components are stateless components implemented as pure functions
+  with the help of the `Phoenix.Component` module. They can be either local
+  (same module) or remote (external module).
+
+  `HEEx` allows invoking these function components directly in the template
+  using an HTML-like notation. For example, a remote function:
+
+      <MyApp.Weather.city name="Kraków"/>
+
+  A local function can be invoked with a leading dot:
+
+      <.city name="Kraków"/>
+
+  where the component could be defined as follows:
+
+      defmodule MyApp.Weather do
+        use Phoenix.Component
+
+        def city(assigns) do
+          ~H"""
+          The chosen city is: <%= @name %>.
+          """
+        end
+
+        def country(assigns) do
+          ~H"""
+          The chosen country is: <%= @name %>.
+          """
+        end
+      end
+
+  It is typically best to group related functions into a single module, as
+  opposed to having many modules with a single `render/1` function. Function
+  components support other important features, such as slots. You can learn
+  more about components in `Phoenix.Component`.
+
+  ### HEEx extension: special attributes
+
+  Apart from normal HTML attributes, HEEx also support some special attributes
+  such as `:let` and `:for`.
+
+  #### :let
+
+  This is used by components and slots that want to yield a value back to the
+  caller. For an example, see how `form/1` works:
+
+  ```heex
+  <.form :let={f} for={@changeset} phx-change="validate" phx-submit="save">
+    <%= label(f, :username) %>
+    <%= text_input(f, :username) %>
+    ...
+  </.form>
+  ```
+
+  Notice how the variable `f`, defined by `.form`, is used by `label` and
+  `text_input`. The `Phoenix.Component` module has detailed documentation on
+  how to use and implement such functionality.
+
+  #### :for
+
+  It is a syntax sugar for `<%= for .. do %>` that can be used only in regular HTML
+  tags, therefore `:for` will not work on components.
+
+  ```heex
+  <table id="my-table">
+    <tr :for={user <- @users}>
+      <td><%= user.name %>
+    </tr>
+  <table>
+  ```
+
+  The snippet above will generate a `tr` per user as you would expect.
+  '''
+  defmacro sigil_H({:<<>>, meta, [expr]}, []) do
+    unless Macro.Env.has_var?(__CALLER__, {:assigns, nil}) do
+      raise "~H requires a variable named \"assigns\" to exist and be set to a map"
+    end
+
+    options = [
+      engine: Phoenix.LiveView.HTMLEngine,
+      file: __CALLER__.file,
+      line: __CALLER__.line + 1,
+      caller: __CALLER__,
+      indentation: meta[:indentation] || 0
+    ]
+
+    EEx.compile_string(expr, options)
+  end
+
+  @doc ~S'''
+  Filters the assigns as a list of keywords for use in dynamic tag attributes.
+
+  Useful for transforming caller assigns into dynamic attributes while
+  stripping reserved keys from the result.
+
+  ## Examples
+
+  Imagine the following `my_link` component which allows a caller
+  to pass a `new_window` assign, along with any other attributes they
+  would like to add to the element, such as class, data attributes, etc:
+
+      <.my_link href="/" id={@id} new_window={true} class="my-class">Home</.my_link>
+
+  We could support the dynamic attributes with the following component:
+
+      def my_link(assigns) do
+        target = if assigns[:new_window], do: "_blank", else: false
+        extra = assigns_to_attributes(assigns, [:new_window])
+
+        assigns =
+          assigns
+          |> assign(:target, target)
+          |> assign(:extra, extra)
+
+        ~H"""
+        <a href={@href} target={@target} {@extra}>
+          <%= render_slot(@inner_block) %>
+        </a>
+        """
+      end
+
+  The above would result in the following rendered HTML:
+
+      <a href="/" target="_blank" id="1" class="my-class">Home</a>
+
+  The second argument (optional) to `assigns_to_attributes` is a list of keys to
+  exclude. It typically includes reserved keys by the component itself, which either
+  do not belong in the markup, or are already handled explicitly by the component.
+  '''
+  def assigns_to_attributes(assigns, exclude \\ []) do
+    excluded_keys = @reserved_assigns ++ exclude
+    for {key, val} <- assigns, key not in excluded_keys, into: [], do: {key, val}
+  end
+
+  @doc """
+  Renders a LiveView within a template.
+
+  This is useful in two situations:
+
+    * When rendering a child LiveView inside a LiveView
+
+    * When rendering a LiveView inside a regular (non-live) controller/view
+
+  ## Options
+
+    * `:session` - a map of binary keys with extra session data to be
+      serialized and sent to the client. All session data currently in
+      the connection is automatically available in LiveViews. You can
+      use this option to provide extra data. Remember all session data
+      is serialized and sent to the client, so you should always
+      keep the data in the session to a minimum. For example, instead
+      of storing a User struct, you should store the "user_id" and load
+      the User when the LiveView mounts.
+
+    * `:container` - an optional tuple for the HTML tag and DOM
+      attributes to be used for the LiveView container. For example:
+      `{:li, style: "color: blue;"}`. By default it uses the module
+      definition container. See the "Containers" section below for more
+      information.
+
+    * `:id` - both the DOM ID and the ID to uniquely identify a LiveView.
+      An `:id` is automatically generated when rendering root LiveViews
+      but it is a required option when rendering a child LiveView.
+
+    * `:sticky` - an optional flag to maintain the LiveView across
+      live redirects, even if it is nested within another LiveView.
+      If you are rendering the sticky view within your live layout,
+      make sure that the sticky view itself does not use the same
+      layout. You can do so by returning `{:ok, socket, layout: false}`
+      from mount.
+
+  ## Examples
+
+  When rendering from a controller/view, you can call:
+
+      <%= live_render(@conn, MyApp.ThermostatLive) %>
+
+  Or:
+
+      <%= live_render(@conn, MyApp.ThermostatLive, session: %{"home_id" => @home.id}) %>
+
+  Within another LiveView, you must pass the `:id` option:
+
+      <%= live_render(@socket, MyApp.ThermostatLive, id: "thermostat") %>
+
+  ## Containers
+
+  When a `LiveView` is rendered, its contents are wrapped in a container.
+  By default, the container is a `div` tag with a handful of `LiveView`
+  specific attributes.
+
+  The container can be customized in different ways:
+
+    * You can change the default `container` on `use Phoenix.LiveView`:
+
+          use Phoenix.LiveView, container: {:tr, id: "foo-bar"}
+
+    * You can override the container tag and pass extra attributes when
+      calling `live_render` (as well as on your `live` call in your router):
+
+          live_render socket, MyLiveView, container: {:tr, class: "highlight"}
+
+  """
+  def live_render(conn_or_socket, view, opts \\ [])
+
+  def live_render(%Plug.Conn{} = conn, view, opts) do
+    case Static.render(conn, view, opts) do
+      {:ok, content, _assigns} ->
+        content
+
+      {:stop, _} ->
+        raise RuntimeError, "cannot redirect from a child LiveView"
+    end
+  end
+
+  def live_render(%Socket{} = parent, view, opts) do
+    Static.nested_render(parent, view, opts)
+  end
+
+  @doc """
+  A function component for rendering `Phoenix.LiveComponent`
+  within a parent LiveView.
+
+  While `LiveView`s can be nested, each LiveView starts its
+  own process. A `LiveComponent` provides similar functionality
+  to `LiveView`, except they run in the same process as the
+  `LiveView`, with its own encapsulated state. That's why they
+  are called stateful components.
+
+  See `Phoenix.LiveComponent` for more information.
+
+  ## Examples
+
+  `.live_component` requires the component `:module` and its
+  `:id` to be given:
+
+      <.live_component module={MyApp.WeatherComponent} id="thermostat" city="Kraków" />
+
+  The `:id` is used to identify this `LiveComponent` throughout the
+  LiveView lifecycle. Note the `:id` won't necessarily be used as the
+  DOM ID. That's up to the component.
+  """
+  def live_component(assigns) when is_map(assigns) do
+    id = assigns[:id]
+
+    {module, assigns} =
+      assigns
+      |> Map.delete(:__changed__)
+      |> Map.pop(:module)
+
+    if module == nil or not is_atom(module) do
+      raise ArgumentError,
+            ".live_component expects module={...} to be given and to be an atom, " <>
+              "got: #{inspect(module)}"
+    end
+
+    if id == nil do
+      raise ArgumentError, ".live_component expects id={...} to be given, got: nil"
+    end
+
+    case module.__live__() do
+      %{kind: :component} ->
+        %Phoenix.LiveView.Component{id: id, assigns: assigns, component: module}
+
+      %{kind: kind} ->
+        raise ArgumentError, "expected #{inspect(module)} to be a component, but it is a #{kind}"
+    end
+  end
+
+  def live_component(component) when is_atom(component) do
+    IO.warn(
+      "<%= live_component Component %> is deprecated, " <>
+        "please use <.live_component module={Component} id=\"hello\" /> inside HEEx templates instead"
+    )
+
+    Phoenix.LiveView.Helpers.__live_component__(component.__live__(), %{}, nil)
+  end
+
+  @doc ~S'''
+  Renders a slot entry with the given optional `argument`.
+
+      <%= render_slot(@inner_block, @form) %>
+
+  If the slot has no entries, nil is returned.
+
+  If multiple slot entries are defined for the same slot,
+  `render_slot/2` will automatically render all entries,
+  merging their contents. In case you want to use the entries'
+  attributes, you need to iterate over the list to access each
+  slot individually.
+
+  For example, imagine a table component:
+
+      <.table rows={@users}>
+        <:col :let={user} label="Name">
+          <%= user.name %>
+        </:col>
+
+        <:col :let={user} label="Address">
+          <%= user.address %>
+        </:col>
+      </.table>
+
+  At the top level, we pass the rows as an assign and we define
+  a `:col` slot for each column we want in the table. Each
+  column also has a `label`, which we are going to use in the
+  table header.
+
+  Inside the component, you can render the table with headers,
+  rows, and columns:
+
+      def table(assigns) do
+        ~H"""
+        <table>
+          <tr>
+            <%= for col <- @col do %>
+              <th><%= col.label %></th>
+            <% end %>
+          </tr>
+          <%= for row <- @rows do %>
+            <tr>
+              <%= for col <- @col do %>
+                <td><%= render_slot(col, row) %></td>
+              <% end %>
+            </tr>
+          <% end %>
+        </table>
+        """
+      end
+
+  '''
+  defmacro render_slot(slot, argument \\ nil) do
+    quote do
+      unquote(__MODULE__).__render_slot__(
+        var!(changed, Phoenix.LiveView.Engine),
+        unquote(slot),
+        unquote(argument)
+      )
+    end
+  end
+
+  @doc false
+  def __render_slot__(_, [], _), do: nil
+
+  def __render_slot__(changed, [entry], argument) do
+    call_inner_block!(entry, changed, argument)
+  end
+
+  def __render_slot__(changed, entries, argument) when is_list(entries) do
+    assigns = %{}
+
+    ~H"""
+    <%= for entry <- entries do %><%= call_inner_block!(entry, changed, argument) %><% end %>
+    """
+  end
+
+  def __render_slot__(changed, entry, argument) when is_map(entry) do
+    entry.inner_block.(changed, argument)
+  end
+
+  defp call_inner_block!(entry, changed, argument) do
+    if !entry.inner_block do
+      message = "attempted to render slot <:#{entry.__slot__}> but the slot has no inner content"
+      raise RuntimeError, message
+    end
+
+    entry.inner_block.(changed, argument)
+  end
+
+  @doc """
+  Returns the flash message from the LiveView flash assign.
+
+  ## Examples
+
+      <p class="alert alert-info"><%= live_flash(@flash, :info) %></p>
+      <p class="alert alert-danger"><%= live_flash(@flash, :error) %></p>
+  """
+  def live_flash(%_struct{} = other, _key) do
+    raise ArgumentError, "live_flash/2 expects a @flash assign, got: #{inspect(other)}"
+  end
+
+  def live_flash(%{} = flash, key), do: Map.get(flash, to_string(key))
+
+  @doc """
+  Returns the entry errors for an upload.
+
+  The following error may be returned:
+
+    * `:too_many_files` - The number of selected files exceeds the `:max_entries` constraint
+
+  ## Examples
+
+      def error_to_string(:too_many_files), do: "You have selected too many files"
+
+      <%= for err <- upload_errors(@uploads.avatar) do %>
+        <div class="alert alert-danger">
+          <%= error_to_string(err) %>
+        </div>
+      <% end %>
+  """
+  def upload_errors(%Phoenix.LiveView.UploadConfig{} = conf) do
+    for {ref, error} <- conf.errors, ref == conf.ref, do: error
+  end
+
+  @doc """
+  Returns the entry errors for an upload.
+
+  The following errors may be returned:
+
+    * `:too_large` - The entry exceeds the `:max_file_size` constraint
+    * `:not_accepted` - The entry does not match the `:accept` MIME types
+
+  ## Examples
+
+      def error_to_string(:too_large), do: "Too large"
+      def error_to_string(:not_accepted), do: "You have selected an unacceptable file type"
+
+      <%= for entry <- @uploads.avatar.entries do %>
+        <%= for err <- upload_errors(@uploads.avatar, entry) do %>
+          <div class="alert alert-danger">
+            <%= error_to_string(err) %>
+          </div>
+        <% end %>
+      <% end %>
+  """
+  def upload_errors(
+        %Phoenix.LiveView.UploadConfig{} = conf,
+        %Phoenix.LiveView.UploadEntry{} = entry
+      ) do
+    for {ref, error} <- conf.errors, ref == entry.ref, do: error
+  end
+
+
+  @doc ~S'''
+  Assigns the given `key` with value from `fun` into `socket_or_assigns` if
+  one does not yet exist.
+
+  The first argument is either a LiveView `socket` or an `assigns` map from
+  function components.
+
+  This function is useful for lazily assigning values and referencing parent
+  assigns. We will cover both use cases next.
+
+  ## Lazy assigns
+
+  Imagine you have a function component that accepts a color:
+
+      <.my_component color="red" />
+
+  The color is also optional, so you can skip it:
+
+      <.my_component />
+
+  In such cases, the implementation can use `assign_new` to lazily
+  assign a color if none is given. Let's make it so it picks a random one
+  when none is given:
+
+      def my_component(assigns) do
+        assigns = assign_new(assigns, :color, fn -> Enum.random(~w(red green blue)) end)
+
+        ~H"""
+        <div class={"bg-#{@color}"}>
+          Example
+        </div>
+        """
+      end
+
+  ## Referencing parent assigns
+
+  When a user first accesses an application using LiveView, the LiveView is first
+  rendered in its disconnected state, as part of a regular HTML response. In some
+  cases, there may be data that is shared by your Plug pipelines and your LiveView,
+  such as the `:current_user` assign.
+
+  By using `assign_new` in the mount callback of your LiveView, you can instruct
+  LiveView to re-use any assigns set in your Plug pipelines as part of `Plug.Conn`,
+  avoiding sending additional queries to the database. Imagine you have a Plug
+  that does:
+
+      # A plug
+      def authenticate(conn, _opts) do
+        if user_id = get_session(conn, :user_id) do
+          assign(conn, :current_user, Accounts.get_user!(user_id))
+        else
+          send_resp(conn, :forbidden)
+        end
+      end
+
+  You can re-use the `:current_user` assign in your LiveView during the initial
+  render:
+
+      def mount(_params, %{"user_id" => user_id}, socket) do
+        {:ok, assign_new(socket, :current_user, fn -> Accounts.get_user!(user_id) end)}
+      end
+
+  In such case `conn.assigns.current_user` will be used if present. If there is no
+  such `:current_user` assign or the LiveView was mounted as part of the live
+  navigation, where no Plug pipelines are invoked, then the anonymous function is
+  invoked to execute the query instead.
+
+  LiveView is also able to share assigns via `assign_new` within nested LiveView.
+  If the parent LiveView defines a `:current_user` assign and the child LiveView
+  also uses `assign_new/3` to fetch the `:current_user` in its `mount/3` callback,
+  as above, the assign will be fetched from the parent LiveView, once again
+  avoiding additional database queries.
+
+  Note that `fun` also provides access to the previously assigned values:
+
+      assigns =
+          assigns
+          |> assign_new(:foo, fn -> "foo" end)
+          |> assign_new(:bar, fn %{foo: foo} -> foo <> "bar" end)
+  '''
+  def assign_new(socket_or_assigns, key, fun)
+
+  def assign_new(%Socket{} = socket, key, fun) when is_function(fun, 1) do
+    validate_assign_key!(key)
+
+    case socket do
+      %{assigns: %{^key => _}} ->
+        socket
+
+      %{private: %{assign_new: {assigns, keys}}} ->
+        # It is important to store the keys even if they are not in assigns
+        # because maybe the controller doesn't have it but the view does.
+        socket = put_in(socket.private.assign_new, {assigns, [key | keys]})
+
+        Phoenix.LiveView.Utils.force_assign(
+          socket,
+          key,
+          case assigns do
+            %{^key => value} -> value
+            %{} -> fun.(socket.assigns)
+          end
+        )
+
+      %{assigns: assigns} ->
+        Phoenix.LiveView.Utils.force_assign(socket, key, fun.(assigns))
+    end
+  end
+
+  def assign_new(%Socket{} = socket, key, fun) when is_function(fun, 0) do
+    validate_assign_key!(key)
+
+    case socket do
+      %{assigns: %{^key => _}} ->
+        socket
+
+      %{private: %{assign_new: {assigns, keys}}} ->
+        # It is important to store the keys even if they are not in assigns
+        # because maybe the controller doesn't have it but the view does.
+        socket = put_in(socket.private.assign_new, {assigns, [key | keys]})
+        Phoenix.LiveView.Utils.force_assign(socket, key, Map.get_lazy(assigns, key, fun))
+
+      %{} ->
+        Phoenix.LiveView.Utils.force_assign(socket, key, fun.())
+    end
+  end
+
+  def assign_new(%{__changed__: changed} = assigns, key, fun) when is_function(fun, 1) do
+    case assigns do
+      %{^key => _} -> assigns
+      %{} -> Phoenix.LiveView.Utils.force_assign(assigns, changed, key, fun.(assigns))
+    end
+  end
+
+  def assign_new(%{__changed__: changed} = assigns, key, fun) when is_function(fun, 0) do
+    case assigns do
+      %{^key => _} -> assigns
+      %{} -> Phoenix.LiveView.Utils.force_assign(assigns, changed, key, fun.())
+    end
+  end
+
+  def assign_new(assigns, _key, fun) when is_function(fun, 0) or is_function(fun, 1) do
+    raise_bad_socket_or_assign!("assign_new/3", assigns)
+  end
+
+  defp raise_bad_socket_or_assign!(name, assigns) do
+    extra =
+      case assigns do
+        %_{} ->
+          ""
+
+        %{} ->
+          """
+          You passed an assigns map that does not have the relevant change tracking \
+          information. This typically means you are calling a function component by \
+          hand instead of using the HEEx template syntax. If you are using HEEx, make \
+          sure you are calling a component using:
+
+              <.component attribute={value} />
+
+          If you are outside of HEEx and you want to test a component, use \
+          Phoenix.LiveViewTest.render_component/2:
+
+              Phoenix.LiveViewTest.render_component(&component/1, attribute: "value")
+
+          """
+
+        _ ->
+          ""
+      end
+
+    raise ArgumentError,
+          "#{name} expects a socket from Phoenix.LiveView/Phoenix.LiveComponent " <>
+            " or an assigns map from Phoenix.Component as first argument, got: " <>
+            inspect(assigns) <> extra
+  end
+
+  @doc """
+  Adds a `key`-`value` pair to `socket_or_assigns`.
+
+  The first argument is either a LiveView `socket` or an
+  `assigns` map from function components.
+
+  ## Examples
+
+      iex> assign(socket, :name, "Elixir")
+
+  """
+  def assign(socket_or_assigns, key, value)
+
+  def assign(%Socket{} = socket, key, value) do
+    validate_assign_key!(key)
+    Phoenix.LiveView.Utils.assign(socket, key, value)
+  end
+
+  def assign(%{__changed__: changed} = assigns, key, value) do
+    case assigns do
+      %{^key => ^value} ->
+        assigns
+
+      %{} ->
+        Phoenix.LiveView.Utils.force_assign(assigns, changed, key, value)
+    end
+  end
+
+  def assign(assigns, _key, _val) do
+    raise_bad_socket_or_assign!("assign/3", assigns)
+  end
+
+  @doc """
+  Adds key-value pairs to assigns.
+
+  The first argument is either a LiveView `socket` or an
+  `assigns` map from function components.
+
+  A keyword list or a map of assigns must be given as argument
+  to be merged into existing assigns.
+
+  ## Examples
+
+      iex> assign(socket, name: "Elixir", logo: "💧")
+      iex> assign(socket, %{name: "Elixir"})
+
+  """
+  def assign(socket_or_assigns, keyword_or_map)
+      when is_map(keyword_or_map) or is_list(keyword_or_map) do
+    Enum.reduce(keyword_or_map, socket_or_assigns, fn {key, value}, acc ->
+      assign(acc, key, value)
+    end)
+  end
+
+  defp validate_assign_key!(:flash) do
+    raise ArgumentError,
+          ":flash is a reserved assign by LiveView and it cannot be set directly. " <>
+            "Use the appropriate flash functions instead."
+  end
+
+  defp validate_assign_key!(_key), do: :ok
+
+  @doc """
+  Updates an existing `key` with `fun` in the given `socket_or_assigns`.
+
+  The first argument is either a LiveView `socket` or an
+  `assigns` map from function components.
+
+  The update function receives the current key's value and
+  returns the updated value. Raises if the key does not exist.
+
+  The update function may also be of arity 2, in which case it receives
+  the current key's value as the first argument and the current assigns
+  as the second argument. Raises if the key does not exist.
+
+  ## Examples
+
+      iex> update(socket, :count, fn count -> count + 1 end)
+      iex> update(socket, :count, &(&1 + 1))
+      iex> update(socket, :max_users_this_session, fn current_max, %{users: users} -> max(current_max, length(users)) end)
+  """
+  def update(socket_or_assigns, key, fun)
+
+  def update(%Socket{assigns: assigns} = socket, key, fun) when is_function(fun, 2) do
+    update(socket, key, &fun.(&1, assigns))
+  end
+
+  def update(%Socket{assigns: assigns} = socket, key, fun) when is_function(fun, 1) do
+    case assigns do
+      %{^key => val} -> assign(socket, key, fun.(val))
+      %{} -> raise KeyError, key: key, term: assigns
+    end
+  end
+
+  def update(assigns, key, fun) when is_function(fun, 2) do
+    update(assigns, key, &fun.(&1, assigns))
+  end
+
+  def update(assigns, key, fun) when is_function(fun, 1) do
+    case assigns do
+      %{^key => val} -> assign(assigns, key, fun.(val))
+      %{} -> raise KeyError, key: key, term: assigns
+    end
+  end
+
+  def update(assigns, _key, fun) when is_function(fun, 1) or is_function(fun, 2) do
+    raise_bad_socket_or_assign!("update/3", assigns)
+  end
+
+  @doc """
+  Checks if the given key changed in `socket_or_assigns`.
+
+  The first argument is either a LiveView `socket` or an
+  `assigns` map from function components.
+
+  ## Examples
+
+      iex> changed?(socket, :count)
+
+  """
+  def changed?(socket_or_assigns, key)
+
+  def changed?(%Socket{assigns: assigns}, key) do
+    Phoenix.LiveView.Utils.changed?(assigns, key)
+  end
+
+  def changed?(%{__changed__: _} = assigns, key) do
+    Phoenix.LiveView.Utils.changed?(assigns, key)
+  end
+
+  def changed?(assigns, _key) do
+    raise_bad_socket_or_assign!("changed?/2", assigns)
+  end
+
+  ## Declarative assigns
 
   @global_prefixes ~w(
     phx-
@@ -482,9 +1340,6 @@ defmodule Phoenix.Component do
   def __global__?(_), do: false
 
   @doc false
-  def __reserved_assigns__, do: [:__changed__, :__slot__, :inner_block, :myself, :flash, :socket]
-
-  @doc false
   defmacro __using__(opts \\ []) do
     conditional =
       if __CALLER__.module != Phoenix.LiveView.Helpers do
@@ -495,6 +1350,7 @@ defmodule Phoenix.Component do
       quote bind_quoted: [opts: opts] do
         import Kernel, except: [def: 2, defp: 2]
         import Phoenix.Component
+        import Phoenix.Component.Declarative
         import Phoenix.LiveView
 
         @doc false
@@ -548,7 +1404,7 @@ defmodule Phoenix.Component do
   * `name` - an atom defining the name of the slot. Note that slots cannot define the same name 
   as any other slots or attributes declared for the same component.
   * `opts` - a keyword list of options. Defaults to `[]`.
-  * `block` - a code block containing calls to `Phoenix.Component.attr/3`. Defaults to `nil`.
+  * `block` - a code block containing calls to `attr/3`. Defaults to `nil`.
 
   ### Options
 
@@ -559,7 +1415,7 @@ defmodule Phoenix.Component do
 
   ### Slot Attributes
 
-  A named slot may declare attributes by passing a block with calls to `Phoenix.Component.attr/3`.
+  A named slot may declare attributes by passing a block with calls to `attr/3`.
 
   Unlike attributes, slot attributes cannot accept the `:default` option. Passing one
   will result in a compile warning being issued.
@@ -656,7 +1512,7 @@ defmodule Phoenix.Component do
   end
 
   @doc """
-  Declares a slot. See `Phoenix.Component.slot/3` for more information.
+  Declares a slot. See `slot/3` for more information.
   """
   defmacro slot(name, opts \\ []) when is_atom(name) and is_list(opts) do
     {block, opts} = Keyword.pop(opts, :do, nil)
@@ -1018,35 +1874,6 @@ defmodule Phoenix.Component do
     raise CompileError, line: line, file: file, description: msg
   end
 
-  @doc false
-  defmacro def(expr, body) do
-    quote do
-      Kernel.def(unquote(annotate_def(:def, expr)), unquote(body))
-    end
-  end
-
-  @doc false
-  defmacro defp(expr, body) do
-    quote do
-      Kernel.defp(unquote(annotate_def(:defp, expr)), unquote(body))
-    end
-  end
-
-  defp annotate_def(kind, expr) do
-    case expr do
-      {:when, meta, [left, right]} -> {:when, meta, [annotate_call(kind, left), right]}
-      left -> annotate_call(kind, left)
-    end
-  end
-
-  defp annotate_call(_kind, {name, meta, [{:\\, _, _} = arg]}), do: {name, meta, [arg]}
-
-  defp annotate_call(kind, {name, meta, [arg]}),
-    do: {name, meta, [quote(do: unquote(__MODULE__).__pattern__!(unquote(kind), unquote(arg)))]}
-
-  defp annotate_call(_kind, left),
-    do: left
-
   defmacro __pattern__!(kind, arg) do
     {name, 1} = __CALLER__.function
     {_slots, attrs} = register_component!(kind, __CALLER__, name, true)
@@ -1140,7 +1967,7 @@ defmodule Phoenix.Component do
 
         attr_names = for(attr <- attrs, do: attr.name)
         slot_names = for(slot <- slots, do: slot.name)
-        known_keys = attr_names ++ slot_names ++ __reserved_assigns__()
+        known_keys = attr_names ++ slot_names ++ @reserved_assigns
 
         def_body =
           if global_name do
@@ -1154,7 +1981,7 @@ defmodule Phoenix.Component do
                 end
 
               merged = Map.merge(%{unquote_splicing(defaults)}, assigns)
-              super(Phoenix.LiveView.assign(merged, unquote(global_name), globals))
+              super(Phoenix.Component.assign(merged, unquote(global_name), globals))
             end
           else
             quote do
