@@ -120,7 +120,7 @@ defmodule Phoenix.LiveView do
 
   Alternatively, you can `live_render` from any template. In your view:
 
-      import Phoenix.LiveView.Helpers
+      import Phoenix.Component
 
   Then in your template:
 
@@ -481,6 +481,7 @@ defmodule Phoenix.LiveView do
       end
 
     quote bind_quoted: [opts: opts] do
+      import Phoenix.LiveView
       @behaviour Phoenix.LiveView
       @before_compile Phoenix.LiveView.Renderer
 

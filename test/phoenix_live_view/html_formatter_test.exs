@@ -693,6 +693,13 @@ if Version.match?(System.version(), ">= 1.13.0") do
       <div class={some_function(:foo, :bar)} />
       """)
 
+      assert_formatter_doesnt_change("""
+      <div class={
+        # test
+        "mx-auto"
+      } />
+      """)
+
       assert_formatter_output(
         """
         <div class={"mx-auto flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-purple-100 sm:mx-0"}>
@@ -1145,16 +1152,40 @@ if Version.match?(System.version(), ">= 1.13.0") do
     end
 
     test "formats eex within script tag" do
-      input = """
+      assert_formatter_doesnt_change("""
       <script>
         var foo = 1;
         var bar = <%= @bar %>
         var baz = <%= @baz %>
         console.log(1)
       </script>
-      """
+      """)
 
-      assert_formatter_doesnt_change(input)
+      assert_formatter_output(
+        """
+        <script type="text/props">
+          <%= %{
+          a: 1,
+          b: 2
+        } %>
+        </script>
+        """,
+        """
+        <script type="text/props">
+            <%= %{
+            a: 1,
+            b: 2
+          } %>
+        </script>
+        """
+      )
+
+      assert_formatter_doesnt_change("""
+      <script type="text/props">
+          <%= raw(Jason.encode!(%{whatEndpoint: Routes.api_search_options_path(@conn, :role_search_options)},
+        escape: :html_safe)) %>
+      </script>
+      """)
     end
 
     test "formats style tag" do
@@ -1843,6 +1874,66 @@ if Version.match?(System.version(), ">= 1.13.0") do
           </nest>
         </svg>Back to previous page
       </button>
+      """)
+    end
+
+    test "does not break attrs" do
+      assert_formatter_output(
+        """
+        <button
+          type={@type}
+          class={
+            [
+              "phx-submit-loading:opacity-75 rounded-lg bg-zinc-900 py-2 px-3 text-sm font-semibold",
+              "leading-6 text-white hover:bg-zinc-700 active:text-white/80",
+              @class
+            ]
+          }
+          {@rest}
+        >
+          <%= render_slot(@inner_block) %>
+        </button>
+        """,
+        """
+        <button
+          type={@type}
+          class={[
+            "phx-submit-loading:opacity-75 rounded-lg bg-zinc-900 py-2 px-3 text-sm font-semibold",
+            "leading-6 text-white hover:bg-zinc-700 active:text-white/80",
+            @class
+          ]}
+          {@rest}
+        >
+          <%= render_slot(@inner_block) %>
+        </button>
+        """
+      )
+
+      assert_formatter_doesnt_change("""
+      <div class={
+        [
+          # test
+          "mx-auto"
+        ]
+      } />
+      """)
+
+      assert_formatter_doesnt_change("""
+      <div class={
+        # test
+        [
+          "mx-auto"
+        ]
+      } />
+      """)
+
+      assert_formatter_doesnt_change("""
+      <div class={
+        [
+          # test
+          "mx-auto"
+        ]
+      } />
       """)
     end
 

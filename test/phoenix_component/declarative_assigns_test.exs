@@ -17,20 +17,21 @@ defmodule Phoenix.ComponentDeclarativeAssignsTest do
   end
 
   test "__global__?" do
-    assert Phoenix.Component.__global__?("id")
-    refute Phoenix.Component.__global__?("idnope")
-    refute Phoenix.Component.__global__?("not-global")
+    assert Phoenix.Component.Declarative.__global__?("id")
+    refute Phoenix.Component.Declarative.__global__?("idnope")
+    refute Phoenix.Component.Declarative.__global__?("not-global")
 
     # prefixes
-    assert Phoenix.Component.__global__?("aria-label")
-    assert Phoenix.Component.__global__?("data-whatever")
-    assert Phoenix.Component.__global__?("phx-click")
+    assert Phoenix.Component.Declarative.__global__?("aria-label")
+    assert Phoenix.Component.Declarative.__global__?("data-whatever")
+    assert Phoenix.Component.Declarative.__global__?("phx-click")
   end
 
   defmodule RemoteFunctionComponentWithAttrs do
     use Phoenix.Component
 
     attr :id, :any, required: true
+    slot :inner_block
     def remote(assigns), do: ~H[]
   end
 
@@ -42,6 +43,7 @@ defmodule Phoenix.ComponentDeclarativeAssignsTest do
     def func1_line, do: __ENV__.line
     attr :id, :any, required: true
     attr :email, :string, default: nil
+    slot :inner_block
     def func1(assigns), do: ~H[]
 
     def func2_line, do: __ENV__.line
@@ -129,7 +131,16 @@ defmodule Phoenix.ComponentDeclarativeAssignsTest do
                    line: func1_line + 1
                  }
                ],
-               slots: []
+               slots: [
+                 %{
+                   attrs: [],
+                   doc: nil,
+                   line: func1_line + 3,
+                   name: :inner_block,
+                   opts: [],
+                   required: false
+                 }
+               ]
              },
              func2: %{
                kind: :def,
@@ -689,7 +700,7 @@ defmodule Phoenix.ComponentDeclarativeAssignsTest do
            }
   end
 
-  test "injects attr docs to function component @doc string" do
+  test "inserts attr docs to function component @doc string" do
     {_, _, :elixir, "text/markdown", _, _, docs} =
       Code.fetch_docs(Phoenix.LiveViewTest.FunctionComponentWithAttrs)
 
@@ -709,14 +720,16 @@ defmodule Phoenix.ComponentDeclarativeAssignsTest do
       fun_doc_false: :hidden,
       fun_doc_injection: "fun docs\n\n## Attributes\n\n* `attr` (`:any`)\n\nfun docs\n",
       fun_multiple_attr: "## Attributes\n\n* `attr1` (`:any`)\n* `attr2` (`:any`)\n",
-      fun_with_attr_doc: "## Attributes\n\n* `attr` (`:any`) - attr docs\n",
+      fun_with_attr_doc: "## Attributes\n\n* `attr` (`:any`) - attr docs.\n",
+      fun_with_attr_doc_period:
+        "## Attributes\n\n* `attr` (`:any`) - attr docs. Defaults to `\"foo\"`.\n",
       fun_with_hidden_attr: "## Attributes\n\n* `attr1` (`:any`)\n",
       fun_with_doc: "fun docs\n## Attributes\n\n* `attr` (`:any`)\n",
       fun_slot: "## Slots\n\n* `inner_block`\n",
-      fun_slot_doc: "## Slots\n\n* `inner_block` - slot docs\n",
+      fun_slot_doc: "## Slots\n\n* `inner_block` - slot docs.\n",
       fun_slot_required: "## Slots\n\n* `inner_block` (required)\n",
       fun_slot_with_attrs:
-        "## Slots\n\n* `named` (required) - a named slot. Accepts attributes: \n\t* `attr1` (`:any`) (required) - a slot attr doc\n\t* `attr2` (`:any`) - a slot attr doc\n"
+        "## Slots\n\n* `named` (required) - a named slot. Accepts attributes: \n\t* `attr1` (`:any`) (required) - a slot attr doc.\n\t* `attr2` (`:any`) - a slot attr doc.\n"
     }
 
     for {{_, fun, _}, _, _, %{"en" => doc}, _} <- docs do
