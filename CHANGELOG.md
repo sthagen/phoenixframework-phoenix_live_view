@@ -32,10 +32,14 @@ a `:let` usage.
   - [Component] Add `dynamic_tag` function component
   - [Component] Add `link` function component
   - [Component] Add `focus_wrap` function component to wrap focus around content like modals and dialogs for accessibility
-  - [Component] Add new attrs `:let` and `:for`. We still support `let` but the formatter will convert it to `:let` and soon it will be deprecated.
+  - [Component] Add new attrs `:let` and `:for`, and `:if` with HTML tag, function component, and slot support. We still support `let` but the formatter will convert it to `:let` and soon it will be deprecated.
   - [Logger] Add new LiveView logger with telemetry instrumentation for lifecycle events
   - [JS] Add new JS commands for `focus`, `focus_first`, `push_focus`, and `pop_focus` for accessibility
   - [Socket] Support sharing `Phoenix.LiveView.Socket` with regular channels via `use Phoenix.LiveView.Socket`
+  - Add `_live_referer` connect param for handling `push_navigate` referal URL
+  - Add new `phx-connected` and `phx-disconnected` bindings for reacting to lifecycle changes
+  - Add dead view support for JS commands
+  - Add dead view support for hooks
 
 ### Bug fixes
   - Fix external upload issue where listeners are not cleaned up when an external failure happens on the client

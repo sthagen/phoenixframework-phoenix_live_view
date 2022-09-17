@@ -74,7 +74,8 @@ let serializeForm = (form, meta, onlyNames = []) => {
 }
 
 export default class View {
-  constructor(el, liveSocket, parentView, flash){
+  constructor(el, liveSocket, parentView, flash, liveReferer){
+    this.isDead = false
     this.liveSocket = liveSocket
     this.flash = flash
     this.parent = parentView
@@ -103,10 +104,10 @@ export default class View {
       return {
         redirect: this.redirect ? this.href : undefined,
         url: this.redirect ? undefined : this.href || undefined,
-        params: this.connectParams(),
+        params: this.connectParams(liveReferer),
         session: this.getSession(),
         static: this.getStatic(),
-        flash: this.flash
+        flash: this.flash,
       }
     })
     this.showLoader(this.liveSocket.loaderTimeout)
@@ -122,7 +123,7 @@ export default class View {
 
   isMain(){ return this.el.getAttribute(PHX_MAIN) !== null }
 
-  connectParams(){
+  connectParams(liveReferer){
     let params = this.liveSocket.params(this.el)
     let manifest =
       DOM.all(document, `[${this.binding(PHX_TRACK_STATIC)}]`)
@@ -130,6 +131,7 @@ export default class View {
 
     if(manifest.length > 0){ params["_track_static"] = manifest }
     params["_mounts"] = this.joinCount
+    params["_live_referer"] = liveReferer
 
     return params
   }
@@ -184,9 +186,14 @@ export default class View {
     }
   }
 
+  execAll(binding){
+    DOM.all(this.el, `[${binding}]`, el => this.liveSocket.execJS(el, el.getAttribute(binding)))
+  }
+
   hideLoader(){
     clearTimeout(this.loaderTimer)
     this.setContainerClasses(PHX_CONNECTED_CLASS)
+    this.execAll(this.binding("connected"))
   }
 
   triggerReconnected(){
@@ -303,16 +310,20 @@ export default class View {
     this.el.setAttribute(PHX_ROOT_ID, this.root.id)
   }
 
+  execNewMounted(){
+    DOM.all(this.el, `[${this.binding(PHX_HOOK)}], [data-phx-${PHX_HOOK}]`, hookEl => {
+      this.maybeAddNewHook(hookEl)
+    })
+    DOM.all(this.el, `[${this.binding(PHX_MOUNTED)}]`, el => this.maybeMounted(el))
+  }
+
   applyJoinPatch(live_patch, html, events){
     this.attachTrueDocEl()
     let patch = new DOMPatch(this, this.el, this.id, html, null)
     patch.markPrunableContentForRemoval()
     this.performPatch(patch, false)
     this.joinNewChildren()
-    DOM.all(this.el, `[${this.binding(PHX_HOOK)}], [data-phx-${PHX_HOOK}]`, hookEl => {
-      this.maybeAddNewHook(hookEl)
-    })
-    DOM.all(this.el, `[${this.binding(PHX_MOUNTED)}]`, el => this.maybeMounted(el))
+    this.execNewMounted()
 
     this.joinPending = false
     this.liveSocket.dispatchEvents(events)
@@ -597,6 +608,8 @@ export default class View {
 
   isDestroyed(){ return this.destroyed }
 
+  joinDead(){ this.isDead = true }
+
   join(callback){
     if(this.isMain()){
       this.stopCallback = this.liveSocket.withPageLoading({to: this.href, kind: "initial"})
@@ -656,6 +669,7 @@ export default class View {
     if(this.isMain()){ DOM.dispatchEvent(window, "phx:page-loading-start", {detail: {to: this.href, kind: "error"}}) }
     this.showLoader()
     this.setContainerClasses(PHX_DISCONNECTED_CLASS, PHX_ERROR_CLASS)
+    this.execAll(this.binding("disconnected"))
   }
 
   pushWithReply(refGenerator, event, payload, onReply = function (){ }){
@@ -1101,7 +1115,7 @@ export default class View {
   }
 
   ownsElement(el){
-    return el.getAttribute(PHX_PARENT_ID) === this.id ||
+    return this.isDead || el.getAttribute(PHX_PARENT_ID) === this.id ||
       maybe(el.closest(PHX_VIEW_SELECTOR), node => node.id) === this.id
   }
 
