@@ -56,8 +56,8 @@ defmodule Phoenix.Component do
 
   ## Attributes
 
-  `Phoenix.Component` provides the `attr/3` macro to declare what attributes a function component
-  expects to receive when invoked:
+  `Phoenix.Component` provides the `attr/3` macro to declare what attributes the proceeding function
+  component expects to receive when invoked:
 
       attr :name, :string, required: true
 
@@ -107,7 +107,7 @@ defmodule Phoenix.Component do
         <p>
           Happy birthday <%= @name %>!
           You are <%= @age %> years old.
-        <p>
+        </p>
         """
       end
 
@@ -126,6 +126,30 @@ defmodule Phoenix.Component do
   </p>
   ```
 
+  Multiple function components can be defined in the same module, with different attributes. In the
+  following example, `<Components.greet/>` requires a `name`, but *does not* require a `title`, and
+  `<Component.heading>` requires a `title`, but *does not* require a `name`.
+
+      defmodule Components do
+        use Phoenix.Component
+
+        attr :title, :string, required: true
+
+        def heading(assigns) do
+          ~H"""
+          <h1><%= @title %></h1>
+          """
+        end
+
+        attr :name, :string, required: true
+
+        def greet(assigns) do
+          ~H"""
+          <p>Hello <%= @name %></p>
+          """
+        end
+      end
+
   With the `attr/3` macro you have the core ingredients to create reusable function components.
   But what if you need your function components to support dynamic attributes, such as common HTML
   attributes to mix into a component's container?
@@ -134,7 +158,10 @@ defmodule Phoenix.Component do
 
   Global attributes are a set of attributes that a function component can accept when it
   declares an attribute of type `:global`. By default, the set of attributes accepted are those
-  [common to all HTML elements](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes).
+  attributes common to all standard HTML tags.
+  See [Global attributes](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes)
+  for a complete list of attributes.
+
   Once a global attribute is declared, any number of attributes in the set can be passed by
   the caller without having to modify the function component itself.
 
@@ -181,6 +208,27 @@ defmodule Phoenix.Component do
   <span class="bg-blue-200" phx-click="close">You've got mail!</span>
   ```
 
+  You may also specify which attributes are included in addition to the known globals
+  with the `:include` option. For example to support the `form` attribute on a button
+  component:
+
+  ```elixir
+  # <.button form="my-form"/>
+  attr :rest, :global, include: ~w(form)
+  slot :inner_block
+  def button(assigns) do
+    ~H"""
+    <button {@rest}><%= render_slot(@inner_block) %>
+    """
+  end
+  ```
+
+  The `:include` option is useful to apply global additions on a case-by-case basis, but
+  sometimes you want attributes to be available to all globals you provide, such
+  as when using frameworks that use attribute prefixes, like Alpine.js's `x-on:click`.
+  For these cases, custom global attribute prefixes can be provided, which we'll outline
+  next.
+
   ### Custom Global Attribute Prefixes
 
   You can extend the set of global attributes by providing a list of attribute prefixes to
@@ -200,7 +248,7 @@ defmodule Phoenix.Component do
 
   ## Slots
 
-  In addition to attributes, function components can accept blocks of HEEx content, referred to as
+  In addition to attributes, function components can accept blocks of HEEx content, referred to
   as slots. Slots enable further customization of the rendered HTML, as the caller can pass the
   function component HEEx content they want the component to render. `Phoenix.Component` provides
   the `slot/3` macro used to declare slots for function components:
@@ -349,8 +397,8 @@ defmodule Phoenix.Component do
 
   Below is a table component illustrating multiple named slots with attributes:
 
-      slot :column do
-        attr :label, :string, required: true
+      slot :column, doc: "Columns with column labels" do
+        attr :label, :string, required: true, doc: "Column label"
       end
 
       attr :rows, :list, default: []
@@ -868,10 +916,10 @@ defmodule Phoenix.Component do
   end
 
   def __render_slot__(changed, entries, argument) when is_list(entries) do
-    assigns = %{}
+    assigns = %{entries: entries, changed: changed, argument: argument}
 
     ~H"""
-    <%= for entry <- entries do %><%= call_inner_block!(entry, changed, argument) %><% end %>
+    <%= for entry <- @entries do %><%= call_inner_block!(entry, @changed, @argument) %><% end %>
     """
   end
 
@@ -898,6 +946,7 @@ defmodule Phoenix.Component do
   <p class="alert alert-danger"><%= live_flash(@flash, :error) %></p>
   ```
   """
+  @doc deprecated: "Use Phoenix.Flash.get/2 in Phoenix v1.7+"
   def live_flash(%_struct{} = other, _key) do
     raise ArgumentError, "live_flash/2 expects a @flash assign, got: #{inspect(other)}"
   end
@@ -1453,6 +1502,12 @@ defmodule Phoenix.Component do
     not set and the attribute is not given, accessing the attribute will fail unless a
     value is explicitly set with `assign_new/3`.
 
+  * `:examples` - a non-exhaustive list of values accepted by the attribute, used for documentation
+    purposes.
+
+  * `:values` - an exhaustive list of values accepted by the attributes. If a caller passes a literal
+    not contained in this list, a compile warning is issued.
+
   * `:doc` - documentation for the attribute.
 
   ## Compile-Time Validations
@@ -1467,6 +1522,8 @@ defmodule Phoenix.Component do
   * You specify a literal attribute (such as `value="string"` or `value`, but not `value={expr}`)
   and the type does not match. The following types currently support literal validation:
   `:string`, `:atom`, `:boolean`, `:integer`, `:float`, and `:list`.
+
+  * You specify a literal attribute and it is not a member of the `:values` list.
 
   LiveView does not perform any validation at runtime. This means the type information is mostly
   used for documentation and reflection purposes.
@@ -1518,7 +1575,7 @@ defmodule Phoenix.Component do
         <p>
           Happy birthday <%= @name %>!
           You are <%= @age %> years old.
-        <p>
+        </p>
         """
       end
   '''
@@ -1578,6 +1635,8 @@ defmodule Phoenix.Component do
   ```
   """
   @doc type: :component
+  def live_component(assigns)
+
   # TODO: add declarative attrs once we support non-global dynamic attrs
   def live_component(assigns) when is_map(assigns) do
     id = assigns[:id]
@@ -1769,7 +1828,7 @@ defmodule Phoenix.Component do
   )
 
   attr.(:errors, :list,
-    default: nil,
+    default: [],
     doc: """
     Use this to manually pass a keyword list of errors to the form,
     e.g. `conn.assigns[:errors]`. This option is only used when a connection is used as the form
@@ -1777,7 +1836,11 @@ defmodule Phoenix.Component do
     """
   )
 
-  attr.(:rest, :global, doc: "Additional HTML attributes to add to the form tag.")
+  attr.(:rest, :global,
+    include: ~w(autocomplete name rel enctype novalidate target),
+    doc: "Additional HTML attributes to add to the form tag."
+  )
+
   slot.(:inner_block, required: true, doc: "The content rendered inside of the form tag.")
 
   def form(assigns) do
@@ -1986,6 +2049,7 @@ defmodule Phoenix.Component do
   )
 
   attr.(:rest, :global,
+    include: ~w(download hreflang referrerpolicy rel target type),
     doc: """
     Additional HTML attributes added to the `a` tag.
     """
@@ -2075,7 +2139,7 @@ defmodule Phoenix.Component do
   ```
   """
   @doc type: :component
-  attr.(:id, :string, required: true, doc: "The DOM identifier of the contianer tag.")
+  attr.(:id, :string, required: true, doc: "The DOM identifier of the container tag.")
 
   attr.(:rest, :global, doc: "Additional HTML attributes to add to the container tag.")
 
@@ -2185,10 +2249,11 @@ defmodule Phoenix.Component do
   ```
   """
   @doc type: :component
+  def live_file_input(assigns)
 
   def live_file_input(%Phoenix.LiveView.UploadConfig{} = conf) do
     IO.warn(
-      "live_file_input(upload) is deprecatead, please use <.live_file_input upload={upload} /> instead"
+      "live_file_input(upload) is deprecated, please use <.live_file_input upload={upload} /> instead"
     )
 
     Phoenix.LiveView.Helpers.live_file_input(conf, [])
@@ -2214,10 +2279,14 @@ defmodule Phoenix.Component do
         rest
       end
 
-    preflighted_entries = for entry <- conf.entries, entry.preflighted?, do: entry
-    done_entries = for entry <- conf.entries, entry.done?, do: entry
-    valid? = Enum.any?(conf.entries) && Enum.empty?(conf.errors)
-    assigns = assign(assigns, :rest, rest)
+    assigns =
+      assign(assigns,
+        conf: conf,
+        rest: rest,
+        valid?: Enum.any?(conf.entries) && Enum.empty?(conf.errors),
+        done_entries: for(entry <- conf.entries, entry.done?, do: entry),
+        preflighted_entries: for(entry <- conf.entries, entry.preflighted?, do: entry)
+      )
 
     ~H"""
     <input
@@ -2227,11 +2296,11 @@ defmodule Phoenix.Component do
       accept={@upload.accept != :any && @upload.accept}
       data-phx-hook="Phoenix.LiveFileUpload"
       data-phx-update="ignore"
-      data-phx-upload-ref={conf.ref}
-      data-phx-active-refs={Enum.map_join(conf.entries, ",", & &1.ref)}
-      data-phx-done-refs={Enum.map_join(done_entries, ",", & &1.ref)}
-      data-phx-preflighted-refs={Enum.map_join(preflighted_entries, ",", & &1.ref)}
-      data-phx-auto_upload={valid? && conf.auto_upload?}
+      data-phx-upload-ref={@conf.ref}
+      data-phx-active-refs={Enum.map_join(@conf.entries, ",", & &1.ref)}
+      data-phx-done-refs={Enum.map_join(@done_entries, ",", & &1.ref)}
+      data-phx-preflighted-refs={Enum.map_join(@preflighted_entries, ",", & &1.ref)}
+      data-phx-auto-upload={@valid? && @conf.auto_upload?}
       {@rest}
     />
     """
@@ -2249,10 +2318,11 @@ defmodule Phoenix.Component do
   ```
   """
   @doc type: :component
+  def live_img_preview(assigns)
 
   def live_img_preview(%Phoenix.LiveView.UploadEntry{} = entry) do
     IO.warn("""
-    live_img_preview(entry) is deprecatead, please use <.live_img_preview entry={entry} /> instead
+    live_img_preview(entry) is deprecated, please use <.live_img_preview entry={entry} /> instead
     """)
 
     live_img_preview(%{entry: entry})
@@ -2267,12 +2337,12 @@ defmodule Phoenix.Component do
       |> assigns_to_attributes([:entry])
       |> Keyword.put_new_lazy(:id, fn -> "phx-preview-#{ref}" end)
 
-    assigns = assign(assigns, :rest, rest)
+    assigns = assign(assigns, entry: entry, ref: ref, rest: rest)
 
     ~H"""
     <img
-      data-phx-upload-ref={entry.upload_ref},
-      data-phx-entry-ref={ref},
+      data-phx-upload-ref={@entry.upload_ref}
+      data-phx-entry-ref={@ref}
       data-phx-hook="Phoenix.LiveImgPreview"
       data-phx-update="ignore"
       {@rest} />

@@ -192,17 +192,6 @@ defmodule Phoenix.LiveView do
   `c:render/1` definition above and instead put the template code at
   `lib/my_app_web/live/thermostat_live.html.heex`.
 
-  Alternatively, you can keep the `c:render/1` callback but delegate to an
-  existing `Phoenix.View` module in your application. For example:
-
-      defmodule MyAppWeb.ThermostatLive do
-        use Phoenix.LiveView
-
-        def render(assigns) do
-          Phoenix.View.render(MyAppWeb.PageView, "page.html", assigns)
-        end
-      end
-
   In all cases, each assign in the template will be accessible as `@assign`.
   You can learn more about [assigns and HEEx templates in their own guide](assigns-eex.md).
 
@@ -392,7 +381,7 @@ defmodule Phoenix.LiveView do
   It receives the current `params`, including parameters from
   the router, the current `uri` from the client and the `socket`.
   It is invoked after mount or whenever there is a live navigation
-  event caused by `push_patch/2` or `Phoenix.LiveView.Helpers.live_patch/2`.
+  event caused by `push_patch/2` or `<.link patch={...}>`.
 
   It must always return `{:noreply, socket}`, where `:noreply`
   means no additional information is sent to the client.
@@ -468,6 +457,8 @@ defmodule Phoenix.LiveView do
     * `:container` - configures the container the `LiveView` will be wrapped in
     * `:layout` - configures the layout the `LiveView` will be rendered in
     * `:log` - configures the log level for the `LiveView`
+    * `:global_prefixes` - the global prefixes to use for components. See
+      `Global Attributes` in `Phoenix.Component` for more information.
   """
   defmacro __using__(opts) do
     # Expand layout if possible to avoid compile-time dependencies
@@ -490,7 +481,7 @@ defmodule Phoenix.LiveView do
       @before_compile Phoenix.LiveView
 
       # Phoenix.Component must come last so its @before_compile runs last
-      use Phoenix.Component
+      use Phoenix.Component, Keyword.take(opts, [:global_prefixes])
     end
   end
 
@@ -586,6 +577,7 @@ defmodule Phoenix.LiveView do
         Ensures common `assigns` are applied to all LiveViews attaching this hook.
         "\""
         import Phoenix.LiveView
+        import Phoenix.Component
 
         def on_mount(:default, _params, _session, socket) do
           {:cont, assign(socket, :page_title, "DemoWeb")}

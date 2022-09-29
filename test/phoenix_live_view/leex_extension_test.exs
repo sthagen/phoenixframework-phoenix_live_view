@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView.LEEXTest do
   use ExUnit.Case, async: true
 
-  alias Phoenix.LiveView.{Engine, Rendered, Component}
+  alias Phoenix.LiveView.Rendered
 
   defmodule View do
     use Phoenix.View, root: "test/support/templates/leex", path: ""
@@ -10,10 +10,6 @@ defmodule Phoenix.LiveView.LEEXTest do
   defmodule SampleComponent do
     use Phoenix.LiveComponent
     def render(assigns), do: ~L"FROM COMPONENT"
-  end
-
-  defmacrop compile(string) do
-    EEx.compile_string(string, engine: Engine, file: __CALLER__.file, line: __CALLER__.line + 1)
   end
 
   @assigns %{
@@ -72,20 +68,6 @@ defmodule Phoenix.LiveView.LEEXTest do
   test "renders dead engine with nested live view" do
     assert Phoenix.View.render(View, "dead_with_live.html", @assigns) ==
              {:safe, ["pre: ", "pre", "\n", ["live: ", "inner", ""], "\npost: ", "post"]}
-  end
-
-  test "renders inside render_layout/4" do
-    import Phoenix.View
-    assigns = @assigns
-
-    assert %Rendered{} =
-             compile("""
-             <%= render_layout(View, "inner_live.html", %{}) do %>
-               WITH COMPONENT:
-               <%= %Component{assigns: %{}, component: SampleComponent} %>
-             <% end %>
-             """)
-             |> expand_rendered(true)
   end
 
   defp expand_dynamic(dynamic, track_changes?) do

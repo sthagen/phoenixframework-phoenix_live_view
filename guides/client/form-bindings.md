@@ -201,11 +201,11 @@ attribute:
 ```heex
 <div class="container" phx-drop-target={@uploads.avatar.ref}>
     ...
-    <%= live_file_input @uploads.avatar %>
+    <.live_file_input upload={@uploads.avatar} />
 </div>
 ```
 
-See `Phoenix.LiveView.Helpers.live_file_input/2` for more.
+See `Phoenix.Component.live_file_input/1` for more.
 
 ## Submitting the form action over HTTP
 
@@ -219,7 +219,7 @@ annotate the `phx-trigger-action` with a boolean assign:
 ```heex
 <.form :let={f} for={@changeset}
   action={Routes.reset_password_path(@socket, :create)}
-  phx-submit="save",
+  phx-submit="save"
   phx-trigger-action={@trigger_submit}>
 ```
 
@@ -240,10 +240,11 @@ Once `phx-trigger-action` is true, LiveView disconnects and then submits the for
 
 ## Recovery following crashes or disconnects
 
-By default, all forms marked with `phx-change` will recover input values
-automatically after the user has reconnected or the LiveView has remounted
-after a crash. This is achieved by the client triggering the same `phx-change`
-to the server as soon as the mount has been completed.
+By default, all forms marked with `phx-change` and having `id`
+attribute will recover input values automatically after the user has
+reconnected or the LiveView has remounted after a crash. This is
+achieved by the client triggering the same `phx-change` to the server
+as soon as the mount has been completed.
 
 **Note:** if you want to see form recovery working in development, please
 make sure to disable live reloading in development by commenting out the
@@ -261,7 +262,7 @@ to trigger for recovery, which will receive the form params as usual. For exampl
 imagine a LiveView wizard form where the form is stateful and built based on what
 step the user is on and by prior selections:
 
-    <form phx-change="validate_wizard_step" phx-auto-recover="recover_wizard">
+    <form id="wizard" phx-change="validate_wizard_step" phx-auto-recover="recover_wizard">
 
 On the server, the `"validate_wizard_step"` event is only concerned with the
 current client form data, but the server maintains the entire state of the wizard.

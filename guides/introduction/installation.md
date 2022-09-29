@@ -23,8 +23,7 @@ If installing from Hex, use the latest version from there:
 ```elixir
 def deps do
   [
-    # TODO: bump to released vsn for 0.18
-    {:phoenix_live_view, github: "phoenixframework/phoenix_live_view"},
+    {:phoenix_live_view, "~> 0.18"},
     {:floki, ">= 0.30.0", only: :test}
   ]
 end
@@ -218,7 +217,7 @@ The layout given to `put_root_layout` is typically very barebones, with mostly `
 <html lang="en">
   <head>
     <%= csrf_meta_tag() %>
-    <%= live_title_tag assigns[:page_title] || "MyApp" %>
+    <Phoenix.Component.live_title><%= assigns[:page_title] || "MyApp" %></Phoenix.Component.live_title>
     <link rel="stylesheet" href="<%= Routes.static_path(@conn, "/css/app.css") %>"/>
     <script defer type="text/javascript" src="<%= Routes.static_path(@conn, "/js/app.js") %>"></script>
   </head>

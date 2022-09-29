@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView.MixProject do
   use Mix.Project
 
-  @version "0.18.0-dev"
+  @version "0.18.1"
 
   def project do
     [
@@ -10,6 +10,7 @@ defmodule Phoenix.LiveView.MixProject do
       elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_options: [docs: true],
       package: package(),
       xref: [exclude: [Floki]],
       deps: deps(),
@@ -35,7 +36,7 @@ defmodule Phoenix.LiveView.MixProject do
 
   defp deps do
     [
-      {:phoenix, "~> 1.6.0"},
+      {:phoenix, "~> 1.6 or ~> 1.7"},
       {:phoenix_html, "~> 3.1"},
       {:esbuild, "~> 0.2", only: :dev},
       {:telemetry, "~> 0.4.2 or ~> 1.0"},
@@ -49,7 +50,7 @@ defmodule Phoenix.LiveView.MixProject do
 
   defp docs do
     [
-      main: "Phoenix.LiveView",
+      main: "Phoenix.Component",
       source_ref: "v#{@version}",
       source_url: "https://github.com/phoenixframework/phoenix_live_view",
       extra_section: "GUIDES",
@@ -95,16 +96,18 @@ defmodule Phoenix.LiveView.MixProject do
     # Ungrouped Modules:
     #
     # Phoenix.Component
+    # Phoenix.LiveComponent
     # Phoenix.LiveView
     # Phoenix.LiveView.Controller
+    # Phoenix.LiveView.JS
     # Phoenix.LiveView.Router
-    # Phoenix.LiveView.Socket
     # Phoenix.LiveViewTest
 
     [
-      "Live Components": [
-        Phoenix.LiveComponent,
-        Phoenix.LiveComponent.CID
+      "Configuration": [
+        Phoenix.LiveView.HTMLFormatter,
+        Phoenix.LiveView.Logger,
+        Phoenix.LiveView.Socket
       ],
       "Testing structures": [
         Phoenix.LiveViewTest.Element,
@@ -116,9 +119,9 @@ defmodule Phoenix.LiveView.MixProject do
         Phoenix.LiveView.UploadEntry
       ],
       "Plugin API": [
+        Phoenix.LiveComponent.CID,
         Phoenix.LiveView.Engine,
         Phoenix.LiveView.HTMLEngine,
-        Phoenix.LiveView.HTMLFormatter,
         Phoenix.LiveView.Component,
         Phoenix.LiveView.Rendered,
         Phoenix.LiveView.Comprehension
@@ -136,7 +139,7 @@ defmodule Phoenix.LiveView.MixProject do
       },
       files:
         ~w(assets/js lib priv) ++
-          ~w(CHANGELOG.md LICENSE.md mix.exs package.json README.md)
+          ~w(CHANGELOG.md LICENSE.md mix.exs package.json README.md .formatter.exs)
     ]
   end
 

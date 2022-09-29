@@ -189,7 +189,7 @@ var LiveView = (() => {
   };
   var closestPhxBinding = (el, binding, borderEl) => {
     do {
-      if (el.matches(`[${binding}]`)) {
+      if (el.matches(`[${binding}]`) && !el.disabled) {
         return el;
       }
       el = el.parentElement || el.parentNode;
@@ -817,6 +817,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         let uploadRef = inputEl.getAttribute(PHX_UPLOAD_REF);
         fileData[uploadRef] = fileData[uploadRef] || [];
         entry.ref = this.genFileRef(file);
+        entry.last_modified = file.lastModified;
         entry.name = file.name || entry.ref;
         entry.relative_path = file.webkitRelativePath;
         entry.type = file.type;
@@ -2328,8 +2329,6 @@ within:
           flash: this.flash
         };
       });
-      this.showLoader(this.liveSocket.loaderTimeout);
-      this.bindChannel();
     }
     setHref(href) {
       this.href = href;
@@ -2792,6 +2791,8 @@ within:
       this.isDead = true;
     }
     join(callback) {
+      this.showLoader(this.liveSocket.loaderTimeout);
+      this.bindChannel();
       if (this.isMain()) {
         this.stopCallback = this.liveSocket.withPageLoading({ to: this.href, kind: "initial" });
       }

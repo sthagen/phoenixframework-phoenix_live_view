@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView.HEExExtensionTest do
   use ExUnit.Case, async: true
 
-  alias Phoenix.LiveView.{HTMLEngine, Rendered, Component}
+  alias Phoenix.LiveView.Rendered
 
   defmodule View do
     use Phoenix.View, root: "test/support/templates/heex", path: ""
@@ -10,15 +10,6 @@ defmodule Phoenix.LiveView.HEExExtensionTest do
   defmodule SampleComponent do
     use Phoenix.LiveComponent
     def render(assigns), do: ~H"FROM COMPONENT"
-  end
-
-  defmacrop compile(string) do
-    EEx.compile_string(
-      string,
-      engine: HTMLEngine,
-      file: __CALLER__.file,
-      line: __CALLER__.line + 1
-    )
   end
 
   @assigns %{
@@ -103,20 +94,6 @@ defmodule Phoenix.LiveView.HEExExtensionTest do
               ]
             } =
               Phoenix.View.render(View, "dead_with_function_component_with_inner_content.html", @assigns)
-              |> expand_rendered(true)
-  end
-
-  test "renders inside render_layout/4" do
-    import Phoenix.View
-    assigns = @assigns
-
-    assert %Rendered{} =
-              compile("""
-              <%= render_layout(View, "inner_live.html", %{}) do %>
-                WITH COMPONENT:
-                <%= %Component{assigns: %{}, component: SampleComponent} %>
-              <% end %>
-              """)
               |> expand_rendered(true)
   end
 

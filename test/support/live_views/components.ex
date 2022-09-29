@@ -21,6 +21,9 @@ defmodule Phoenix.LiveViewTest.FunctionComponentWithAttrs do
     defstruct []
   end
 
+  def identity(var), do: var
+  def map_identity(%{} = map), do: map
+
   attr :attr, :any
   def fun_attr_any(assigns), do: ~H[]
 
@@ -64,6 +67,19 @@ defmodule Phoenix.LiveViewTest.FunctionComponentWithAttrs do
   attr :attr, :any, default: "foo", doc: "attr docs."
   def fun_with_attr_doc_period(assigns), do: ~H[]
 
+  attr :attr, :any,
+    default: "foo",
+    doc: """
+    attr docs with bullets:
+
+      * foo
+      * bar
+
+    and that's it.
+    """
+
+  def fun_with_attr_doc_multiline(assigns), do: ~H[]
+
   attr :attr1, :any
   attr :attr2, :any, doc: false
   def fun_with_hidden_attr(assigns), do: ~H[]
@@ -103,6 +119,49 @@ defmodule Phoenix.LiveViewTest.FunctionComponentWithAttrs do
   end
 
   def fun_slot_with_attrs(assigns), do: ~H[]
+
+  slot :named, required: true do
+    attr :attr1, :any, required: true, doc: "a slot attr doc"
+    attr :attr2, :any, doc: "a slot attr doc"
+  end
+
+  def fun_slot_no_doc_with_attrs(assigns), do: ~H[]
+
+  slot :named,
+    required: true,
+    doc: """
+    Important slot:
+
+    * for a
+    * for b
+    """ do
+    attr :attr1, :any, required: true, doc: "a slot attr doc"
+    attr :attr2, :any, doc: "a slot attr doc"
+  end
+
+  def fun_slot_doc_multiline_with_attrs(assigns), do: ~H[]
+
+  slot :named, required: true do
+    attr :attr1, :any,
+      required: true,
+      doc: """
+      attr docs with bullets:
+
+        * foo
+        * bar
+
+      and that's it.
+      """
+
+    attr :attr2, :any, doc: "a slot attr doc"
+  end
+
+  def fun_slot_doc_with_attrs_multiline(assigns), do: ~H[]
+  
+  attr :attr1, :atom, values: [:foo, :bar, :baz]
+  attr :attr2, :atom, examples: [:foo, :bar, :baz]
+  
+  def fun_attr_values_examples(assigns), do: ~H[]
 end
 
 defmodule Phoenix.LiveViewTest.StatefulComponent do
@@ -140,7 +199,7 @@ defmodule Phoenix.LiveViewTest.StatefulComponent do
     ~H"""
     <div phx-click="transform" id={@id} phx-target={"#" <> @id <> include_parent_id(@parent_id)}>
       <%= @name %> says hi
-      <%= if @dup_name, do: live_component __MODULE__, id: @dup_name, name: @dup_name %>
+      <%= if @dup_name, do: live_component(__MODULE__, id: @dup_name, name: @dup_name) %>
     </div>
     """
   end

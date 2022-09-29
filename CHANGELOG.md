@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.18.0
+## 0.18.2
+
+## Bug Fixes
+  * Fix match error when defining `:values` before `:default`
+
+## 0.18.1 (2022-09-28)
+
+## Bug Fixes
+  * Fix phx-loading class being applied to dead views
+  * Fix `<.live_upload_preview />` causing invalid attribute errors on uploads
+  * Do not fire phx events when element is disabled
+
+## Enhancements
+  * Support `:include` option to extend global attributes on a case-by-case basis
+  * Warn when accessing a variable binding defined outside of `~H`
+
+## 0.18.0 (2022-09-20)
 
 LiveView v0.18 includes a major new feature in the form of declarative assigns with new `attr`
 and `slot` APIs for specifying which attributes a function component supports, the type,
@@ -17,22 +33,22 @@ counterparts `<%= ... %>`. For example, `live_redirect`, `live_patch`, and Phoen
 Those new components live in the `Phoenix.Component` module. `Phoenix.LiveView.Helpers`
 itself has been soft deprecated and all relevant functionality has been migrated.
 You must `import Phoenix.Component` where you previously imported `Phoenix.LiveView.Helpers`
-when upgrading.
+when upgrading. You may also need to `import Phoenix.Component` where you also imported `Phoenix.LiveView` and some of its functions have been moved to `Phoenix.Component`.
 
 Additionally, the special `let` attribute on function components have been deprecated by
 a `:let` usage.
 
 ### Deprecations
-  - `live_redirect` - deprecate in favor of new `<.link navigate={..}>` component of `Phoenix.LiveView.Helpers`
-  - `live_patch` - deprecate in favor of new `<.link patch={..}>` component of `Phoenix.LiveView.Helpers`
+  - `live_redirect` - deprecate in favor of new `<.link navigate={..}>` component of `Phoenix.Component`
+  - `live_patch` - deprecate in favor of new `<.link patch={..}>` component of `Phoenix.Component`
   - `push_redirect` - deprecate in favor of new `push_navigate` function on `Phoenix.LiveView`
 
 ### Enhancements
   - [Component] Add declarative assigns with compile-time verifications and warnings via `attr`/`slot`
+  - [Component] Add new attrs `:let` and `:for`, and `:if` with HTML tag, function component, and slot support. We still support `let` but the formatter will convert it to `:let` and soon it will be deprecated.
   - [Component] Add `dynamic_tag` function component
   - [Component] Add `link` function component
   - [Component] Add `focus_wrap` function component to wrap focus around content like modals and dialogs for accessibility
-  - [Component] Add new attrs `:let` and `:for`, and `:if` with HTML tag, function component, and slot support. We still support `let` but the formatter will convert it to `:let` and soon it will be deprecated.
   - [Logger] Add new LiveView logger with telemetry instrumentation for lifecycle events
   - [JS] Add new JS commands for `focus`, `focus_first`, `push_focus`, and `pop_focus` for accessibility
   - [Socket] Support sharing `Phoenix.LiveView.Socket` with regular channels via `use Phoenix.LiveView.Socket`

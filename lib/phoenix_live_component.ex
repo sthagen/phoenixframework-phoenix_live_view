@@ -182,10 +182,9 @@ defmodule Phoenix.LiveComponent do
 
   ## Live patches and live redirects
 
-  A template rendered inside a component can use `Phoenix.LiveView.Helpers.live_patch/2`
-  and `Phoenix.LiveView.Helpers.live_redirect/2` calls. The
-  [`live_patch/2`](`Phoenix.LiveView.Helpers.live_patch/2`) is always handled
-  by the parent`LiveView`, as components do not provide `handle_params`.
+  A template rendered inside a component can use `<.link patch={...}>` and
+  `<.link navigate={...}>`. Patches are always handled by the parent `LiveView`,
+  as components do not provide `handle_params`.
 
   ## Managing state
 
@@ -206,12 +205,12 @@ defmodule Phoenix.LiveComponent do
         use Phoenix.LiveComponent
 
         def render(assigns) do
-          ~H"\""
+          ~H"""
           <form phx-submit="..." phx-target={@myself}>
             <input name="title"><%= @card.title %></input>
             ...
           </form>
-          "\""
+          """
         end
 
         ...
@@ -358,11 +357,11 @@ defmodule Phoenix.LiveComponent do
         use Phoenix.LiveComponent
 
         def render(assigns) do
-          ~H"\""
+          ~H"""
           <button class="css-framework-class" phx-click="click">
             <%= @text %>
           </button>
-          "\""
+          """
         end
 
         def handle_event("click", _, socket) do
@@ -374,11 +373,11 @@ defmodule Phoenix.LiveComponent do
   Instead, it is much simpler to create a function component:
 
       def my_button(%{text: _, click: _} = assigns) do
-        ~H"\""
+        ~H"""
         <button class="css-framework-class" phx-click={@click}>
           <%= @text %>
         </button>
-        "\""
+        """
       end
 
   If you keep components mostly as an application concern with
@@ -435,14 +434,24 @@ defmodule Phoenix.LiveComponent do
 
   alias Phoenix.LiveView.Socket
 
-  defmacro __using__(_) do
+  @doc """
+  Uses LiveComponent in the current module.
+
+      use Phoenix.LiveComponent
+
+  ## Options
+
+    * `:global_prefixes` - the global prefixes to use for components. See
+      `Global Attributes` in `Phoenix.Component` for more information.
+  """
+  defmacro __using__(opts \\ []) do
     quote do
       import Phoenix.LiveView
       @behaviour Phoenix.LiveComponent
       @before_compile Phoenix.LiveView.Renderer
 
       # Phoenix.Component must come last so its @before_compile runs last
-      use Phoenix.Component
+      use Phoenix.Component, Keyword.take(unquote(opts), [:global_prefixes])
 
       @doc false
       def __live__, do: %{kind: :component, module: __MODULE__}
