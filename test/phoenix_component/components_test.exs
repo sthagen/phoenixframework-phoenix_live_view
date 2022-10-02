@@ -74,7 +74,7 @@ defmodule Phoenix.LiveView.ComponentsTest do
       assigns = %{}
 
       assert render(~H|<.link href="/" class="foo">text</.link>|) ==
-               ~s|<a href="/" class=\"foo\">text</a>|
+               ~s|<a href="/" class="foo">text</a>|
     end
 
     test "with no href" do
@@ -113,17 +113,20 @@ defmodule Phoenix.LiveView.ComponentsTest do
       csrf = Phoenix.HTML.Tag.csrf_token_value("/users")
 
       assert render(~H|<.link href="/users" method={:delete}>delete</.link>|) ==
-               "<a href=\"#\" data-method=\"delete\" data-csrf=\"#{csrf}\" data-to=\"/users\">delete</a>"
+               ~s|<a href="/users" data-method="delete" data-csrf="#{csrf}" data-to="/users">delete</a>|
 
-      assert render(~H|<.link href="/users" method="delete">delete</.link>|) ==
-               "<a href=\"#\" data-method=\"delete\" data-csrf=\"#{csrf}\" data-to=\"/users\">delete</a>"
+      assert render(~H|<.link href="/users" method="delete" csrf_token={true}>delete</.link>|) ==
+               ~s|<a href="/users" data-method="delete" data-csrf="#{csrf}" data-to="/users">delete</a>|
+
+      assert render(~H|<.link href="/users" method="delete" csrf_token={false}>delete</.link>|) ==
+               ~s|<a href="/users" data-method="delete" data-to="/users">delete</a>|
     end
 
     test "csrf with custom token" do
       assigns = %{}
 
       assert render(~H|<.link href="/users" method={:post} csrf_token="123">delete</.link>|) ==
-               "<a href=\"#\" data-method=\"post\" data-csrf=\"123\" data-to=\"/users\">delete</a>"
+               ~s|<a href="/users" data-method="post" data-csrf="123" data-to="/users">delete</a>|
     end
 
     test "csrf with confirm" do
@@ -132,7 +135,14 @@ defmodule Phoenix.LiveView.ComponentsTest do
       assert render(
                ~H|<.link href="/users" method={:post} csrf_token="123" data-confirm="are you sure?">delete</.link>|
              ) ==
-               "<a href=\"#\" data-method=\"post\" data-csrf=\"123\" data-to=\"/users\" data-confirm=\"are you sure?\">delete</a>"
+               "<a href=\"/users\" data-method=\"post\" data-csrf=\"123\" data-to=\"/users\" data-confirm=\"are you sure?\">delete</a>"
+    end
+
+    test "js schemes" do
+      assigns = %{}
+
+      assert render(~H|<.link href={{:javascript, "alert('bad')"}}>js</.link>|) ==
+               ~s|<a href="javascript:alert(&#39;bad&#39;)">js</a>|
     end
 
     test "invalid schemes" do
@@ -140,15 +150,8 @@ defmodule Phoenix.LiveView.ComponentsTest do
 
       assert_raise ArgumentError, ~r/unsupported scheme given to <.link>/, fn ->
         render(~H|<.link href="javascript:alert('bad')">bad</.link>|) ==
-          "<a href=\"/users\" data-method=\"post\" data-csrf=\"123\">delete</a>"
+          ~s|<a href="/users" data-method="post" data-csrf="123">delete</a>|
       end
-    end
-
-    test "js schemes" do
-      assigns = %{}
-
-      assert render(~H|<.link href={{:javascript, "alert('bad')"}}>js</.link>|) ==
-               "<a href=\"javascript:alert(&#39;bad&#39;)\">js</a>"
     end
   end
 
@@ -165,7 +168,7 @@ defmodule Phoenix.LiveView.ComponentsTest do
       dom = render(template)
 
       assert dom ==
-               "<div id=\"wrap\" phx-hook=\"Phoenix.FocusWrap\" class=\"foo\">\n  <span id=\"wrap-start\" tabindex=\"0\" aria-hidden=\"true\"></span>\n  \n  <div>content</div>\n\n  <span id=\"wrap-end\" tabindex=\"0\" aria-hidden=\"true\"></span>\n</div>"
+               ~s|<div id="wrap" phx-hook="Phoenix.FocusWrap" class="foo">\n  <span id="wrap-start" tabindex="0" aria-hidden="true"></span>\n  \n  <div>content</div>\n\n  <span id="wrap-end" tabindex="0" aria-hidden="true"></span>\n</div>|
     end
   end
 
@@ -228,7 +231,7 @@ defmodule Phoenix.LiveView.ComponentsTest do
 
       assert render(
                ~H|<.dynamic_tag name="p" {%{"<script>alert('nice try');</script>" => ""}}></.dynamic_tag>|
-             ) == ~s|<p &lt;script&gt;alert(&#39;nice try&#39;);&lt;/script&gt;=\"\"></p>|
+             ) == ~s|<p &lt;script&gt;alert(&#39;nice try&#39;);&lt;/script&gt;=""></p>|
     end
 
     test "with empty inner block" do
@@ -262,35 +265,38 @@ defmodule Phoenix.LiveView.ComponentsTest do
       assert_raise ArgumentError, ~r/missing :for assign/, fn ->
         assigns = %{}
 
-        parse(~H"""
+        template = ~H"""
         <.form :let={f}>
           <%= text_input f, :foo %>
         </.form>
-        """)
+        """
+
+        parse(template)
       end
     end
 
     test "does not raise when missing method" do
       assigns = %{}
 
-      html =
-        parse(~H"""
-        <.form for={:myform} action="/">
-        </.form>
-        """)
+      template = ~H"""
+      <.form for={:myform} action="/">
+      </.form>
+      """
 
+      html = parse(template)
       assert [{"form", [{"action", "/"}, {"method", "post"}], _}] = html
     end
 
     test "generates form with no options" do
       assigns = %{}
 
-      html =
-        parse(~H"""
-        <.form :let={f} for={:myform}>
-          <%= text_input f, :foo %>
-        </.form>
-        """)
+      template = ~H"""
+      <.form :let={f} for={:myform}>
+        <%= text_input f, :foo %>
+      </.form>
+      """
+
+      html = parse(template)
 
       assert [
                {"form", [],
@@ -303,13 +309,13 @@ defmodule Phoenix.LiveView.ComponentsTest do
     test "generates a csrf_token if if an action is set" do
       assigns = %{}
 
-      html =
-        parse(~H"""
-        <.form :let={f} for={:myform} action="/">
-          <%= text_input f, :foo %>
-        </.form>
-        """)
+      template = ~H"""
+      <.form :let={f} for={:myform} action="/">
+        <%= text_input f, :foo %>
+      </.form>
+      """
 
+      html = parse(template)
       csrf_token = Plug.CSRFProtection.get_csrf_token_for("/")
 
       assert [
@@ -325,12 +331,13 @@ defmodule Phoenix.LiveView.ComponentsTest do
     test "does not generate csrf_token if method is not post or if no action" do
       assigns = %{}
 
-      html =
-        parse(~H"""
-        <.form :let={f} for={:myform} method="get" action="/">
-          <%= text_input f, :foo %>
-        </.form>
-        """)
+      template = ~H"""
+      <.form :let={f} for={:myform} method="get" action="/">
+        <%= text_input f, :foo %>
+      </.form>
+      """
+
+      html = parse(template)
 
       assert [
                {"form", [{"action", "/"}, {"method", "get"}],
@@ -339,12 +346,13 @@ defmodule Phoenix.LiveView.ComponentsTest do
                 ]}
              ] = html
 
-      html =
-        parse(~H"""
-        <.form :let={f} for={:myform}>
-          <%= text_input f, :foo %>
-        </.form>
-        """)
+      template = ~H"""
+      <.form :let={f} for={:myform}>
+        <%= text_input f, :foo %>
+      </.form>
+      """
+
+      html = parse(template)
 
       assert [
                {"form", [],
@@ -357,25 +365,26 @@ defmodule Phoenix.LiveView.ComponentsTest do
     test "generates form with available options and custom attributes" do
       assigns = %{}
 
-      html =
-        parse(~H"""
-        <.form :let={user_form}
-          for={%Plug.Conn{}}
-          id="form"
-          action="/"
-          method="put"
-          multipart
-          csrf_token="123"
-          as="user"
-          errors={[name: "can't be blank"]}
-          data-foo="bar"
-          class="pretty"
-          phx-change="valid"
-        >
-          <%= text_input user_form, :foo %>
-          <%= inspect(user_form.errors) %>
-        </.form>
-        """)
+      template = ~H"""
+      <.form :let={user_form}
+        for={%Plug.Conn{}}
+        id="form"
+        action="/"
+        method="put"
+        multipart
+        csrf_token="123"
+        as="user"
+        errors={[name: "can't be blank"]}
+        data-foo="bar"
+        class="pretty"
+        phx-change="valid"
+      >
+        <%= text_input user_form, :foo %>
+        <%= inspect(user_form.errors) %>
+      </.form>
+      """
+
+      html = parse(template)
 
       assert [
                {"form",
@@ -411,6 +420,31 @@ defmodule Phoenix.LiveView.ComponentsTest do
                ~H|<.live_file_input upload={@conf} class={"<script>alert('nice try');</script>"} />|
              ) ==
                ~s|<input type="file" accept="" data-phx-hook="Phoenix.LiveFileUpload" data-phx-update="ignore" data-phx-active-refs="foo" data-phx-done-refs="" data-phx-preflighted-refs="" data-phx-auto-upload class="&lt;script&gt;alert(&#39;nice try&#39;);&lt;/script&gt;">|
+    end
+  end
+
+  describe "intersperse" do
+    test "generates form with no options" do
+      assigns = %{}
+
+      template = ~H"""
+      <.intersperse :let={item} enum={[1, 2, 3]}>
+        <:separator><span class="sep">|</span></:separator>
+        Item<%= item %>
+      </.intersperse>
+      """
+
+      assert render(template) ==
+               "\n  \n    \n  Item1\n\n  \n\n  \n    <span class=\"sep\">|</span>\n  \n\n  \n    \n  Item2\n\n  \n\n  \n    <span class=\"sep\">|</span>\n  \n\n  \n    \n  Item3\n\n  \n"
+
+      template = ~H"""
+      <.intersperse :let={item} enum={[1]}>
+        <:separator><span class="sep">|</span></:separator>
+        Item<%= item %>
+      </.intersperse>
+      """
+
+      assert render(template) == "\n  \n    \n  Item1\n\n  \n"
     end
   end
 end

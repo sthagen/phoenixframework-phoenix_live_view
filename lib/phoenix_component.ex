@@ -1811,7 +1811,6 @@ defmodule Phoenix.Component do
   )
 
   attr.(:method, :string,
-    default: nil,
     doc: """
     The HTTP method.
     It is only used if an `:action` is given. If the method is not `get` nor `post`,
@@ -1860,7 +1859,7 @@ defmodule Phoenix.Component do
     # unless the action is given.
     {attrs, hidden_method, csrf_token} =
       if action do
-        {method, opts} = Keyword.pop!(opts, :method)
+        {method, opts} = Keyword.pop(opts, :method)
         {method, hidden_method} = form_method(method)
 
         {csrf_token, opts} =
@@ -2041,10 +2040,10 @@ defmodule Phoenix.Component do
     """
   )
 
-  attr.(:csrf_token, :string,
-    default: nil,
+  attr.(:csrf_token, :any,
+    default: true,
     doc: """
-    A custom token to use for links with an HTTP method other than `get`.
+    A boolean or custom token to use for links with an HTTP method other than `get`.
     """
   )
 
@@ -2085,25 +2084,14 @@ defmodule Phoenix.Component do
   end
 
   def link(%{href: href} = assigns) when href != "#" and not is_nil(href) do
-    assigns =
-      case Phoenix.LiveView.Utils.valid_destination!(href, "<.link>") do
-        href when is_binary(href) ->
-          assigns
-          |> assign(:href, href)
-          |> update(:csrf_token, fn
-            nil -> Phoenix.HTML.Tag.csrf_token_value(href)
-            csrf_token -> csrf_token
-          end)
-
-        href ->
-          assign(assigns, :href, href)
-      end
+    href = Phoenix.LiveView.Utils.valid_destination!(href, "<.link>")
+    assigns = assign(assigns, :href, href)
 
     ~H"""
     <a
-      href={if @method == "get", do: @href, else: "#"}
+      href={@href}
       data-method={if @method != "get", do: @method}
-      data-csrf={if @method != "get", do: @csrf_token}
+      data-csrf={if @method != "get", do: csrf_token(@csrf_token, @href)}
       data-to={if @method != "get", do: @href}
       {@rest}
     ><%= render_slot(@inner_block) %></a>
@@ -2115,6 +2103,10 @@ defmodule Phoenix.Component do
     <a href="#" {@rest}><%= render_slot(@inner_block) %></a>
     """
   end
+
+  defp csrf_token(true, href), do: Phoenix.HTML.Tag.csrf_token_value(href)
+  defp csrf_token(false, _href), do: nil
+  defp csrf_token(csrf, _href) when is_binary(csrf), do: csrf
 
   @doc """
   Wraps tab focus around a container for accessibility.
@@ -2351,5 +2343,43 @@ defmodule Phoenix.Component do
 
   def live_img_preview(_assigns) do
     raise ArgumentError, "missing required :entry attribute to <.live_img_preview/>"
+  end
+
+  @doc """
+  Intersperses separator slot between an enumerable.
+
+  Useful when you need to add a separator between items such as when
+  rendering breadcrumbs for navigation. Provides each item to the
+  inner block.
+
+  ## Examples
+
+  ```heex
+  <.intersperse :let={item} enum={["home", "profile", "settings"]}>
+    <:separator>
+      <span class="sep">|</span>
+    </:separator>
+    <%= item.name %>
+  </.intersperse>
+  ```
+
+  Renders the following markup:
+
+      home <span class="sep">|</span> profile <span class="sep">|</span> settings
+  """
+  attr.(:enum, :any, required: true, doc: "the enumerable to intersperse with separators")
+  slot.(:inner_block, required: true, doc: "the inner_block to render for each item")
+  slot.(:separator, required: true, doc: "the slot for the separator")
+
+  def intersperse(assigns) do
+    ~H"""
+    <%= for item <- Enum.intersperse(@enum, :separator) do %>
+      <%= if item == :separator do %>
+        <%= render_slot(@separator) %>
+      <% else %>
+        <%= render_slot(@inner_block, item) %>
+      <% end %>
+    <% end %>
+    """
   end
 end
