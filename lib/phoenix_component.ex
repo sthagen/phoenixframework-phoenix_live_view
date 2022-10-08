@@ -1490,6 +1490,7 @@ defmodule Phoenix.Component do
   | `:integer`      | any integer                                                          |
   | `:float`        | any float                                                            |
   | `:list`         | any list of any arbitrary types                                      |
+  | `:map`          | any map of any arbitrary types                                       |
   | `:global`       | any common HTML attributes, plus those defined by `:global_prefixes` |
   | A struct module | any module that defines a struct with `defstruct/1`                  |
 
@@ -1521,7 +1522,7 @@ defmodule Phoenix.Component do
 
   * You specify a literal attribute (such as `value="string"` or `value`, but not `value={expr}`)
   and the type does not match. The following types currently support literal validation:
-  `:string`, `:atom`, `:boolean`, `:integer`, `:float`, and `:list`.
+  `:string`, `:atom`, `:boolean`, `:integer`, `:float`, `:map` and `:list`.
 
   * You specify a literal attribute and it is not a member of the `:values` list.
 
@@ -2367,6 +2368,7 @@ defmodule Phoenix.Component do
 
       home <span class="sep">|</span> profile <span class="sep">|</span> settings
   """
+  @doc type: :component
   attr.(:enum, :any, required: true, doc: "the enumerable to intersperse with separators")
   slot.(:inner_block, required: true, doc: "the inner_block to render for each item")
   slot.(:separator, required: true, doc: "the slot for the separator")

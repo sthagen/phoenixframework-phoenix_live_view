@@ -1,9 +1,17 @@
 # Changelog
 
-## 0.18.2
+## 0.18.3
+
+## Bug Fixes
+  * Fix bug on slots when passing multiple slot entries with mix if/for syntax
+
+## 0.18.2 (2022-10-04)
 
 ## Bug Fixes
   * Fix match error when defining `:values` before `:default`
+  * Allow tuples in external redirects
+  * Fix race condition on dispatching click away when enter is pressed
+  * Fix formatter breaking inline blocks when surrounded by text without whitespace
 
 ## Enhancements
   * Add `intersperse` component for rendering a separator between an enumerable
@@ -12,7 +20,7 @@
 
 ## Bug Fixes
   * Fix phx-loading class being applied to dead views
-  * Fix `<.live_upload_preview />` causing invalid attribute errors on uploads
+  * Fix `<.live_img_preview />` causing invalid attribute errors on uploads
   * Do not fire phx events when element is disabled
 
 ## Enhancements

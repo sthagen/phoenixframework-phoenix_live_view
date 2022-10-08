@@ -22,7 +22,7 @@ callback, for example:
 | [Key Events](#key-events) | `phx-keydown`, `phx-keyup`, `phx-window-keydown`, `phx-window-keyup`, `phx-key` |
 | [DOM Patching](dom-patching.md) | `phx-mounted`, `phx-update`, `phx-remove` |
 | [JS Interop](js-interop.md#client-hooks) | `phx-hook` |
-| [Lifecycle Events](#lifecycle-events) | `phx-mounted` | `phx-disconnected` | `phx-connected`|
+| [Lifecycle Events](#lifecycle-events) | `phx-mounted`, `phx-disconnected`, `phx-connected` |
 | [Rate Limiting](#rate-limiting-events-with-debounce-and-throttle) | `phx-debounce`, `phx-throttle` |
 | [Static tracking](`Phoenix.LiveView.static_changed?/1`) | `phx-track-static` |
 
@@ -377,3 +377,6 @@ container:
   - `"phx-error"` - applied when an error occurs on the server. Note, this
     class will be applied in conjunction with `"phx-loading"` if connection
     to the server is lost.
+
+For navigation related loading states (both automatic and manual), see `phx-page-loading` as described in
+[JavaScript interoperability: Live navigation events](js-interop.html#live-navigation-events).

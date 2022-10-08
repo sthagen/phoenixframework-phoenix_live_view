@@ -296,6 +296,9 @@ defmodule Phoenix.LiveView.HTMLEngine do
     {acc_assigns, acc_info, specials} =
       Enum.reduce(slots, {%{}, %{}, %{}}, fn {key, assigns, special, info},
                                              {acc_assigns, acc_info, specials} ->
+        special? = Map.has_key?(special, ":if") || Map.has_key?(special, ":for")
+        specials = Map.update(specials, key, special?, &(&1 || special?))
+
         case acc_assigns do
           %{^key => existing_assigns} ->
             acc_assigns = %{acc_assigns | key => [assigns | existing_assigns]}
@@ -304,8 +307,6 @@ defmodule Phoenix.LiveView.HTMLEngine do
             {acc_assigns, acc_info, specials}
 
           %{} ->
-            special? = Map.has_key?(special, ":if") || Map.has_key?(special, ":for")
-            specials = Map.put(specials, key, special?)
             {Map.put(acc_assigns, key, [assigns]), Map.put(acc_info, key, [info]), specials}
         end
       end)
@@ -1236,6 +1237,7 @@ defmodule Phoenix.LiveView.HTMLEngine do
 
   defp attr_type({:<<>>, _, _} = value), do: {:string, value}
   defp attr_type(value) when is_list(value), do: {:list, value}
+  defp attr_type(value = {:%{}, _, _}), do: {:map, value}
   defp attr_type(value) when is_binary(value), do: {:string, value}
   defp attr_type(value) when is_integer(value), do: {:integer, value}
   defp attr_type(value) when is_float(value), do: {:float, value}
