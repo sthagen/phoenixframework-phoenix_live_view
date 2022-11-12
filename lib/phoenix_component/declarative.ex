@@ -557,7 +557,7 @@ defmodule Phoenix.Component.Declarative do
           case length(args) do
             1 ->
               "could not define attributes for function #{name}/1. " <>
-                "Components cannot be dynamically defined or have default arguments"
+                "Please make sure that you have `use Phoenix.Component` and that the function has no default arguments"
 
             arity ->
               "cannot declare attributes for function #{name}/#{arity}. Components must be functions with arity 1"
@@ -1088,7 +1088,7 @@ defmodule Phoenix.Component.Declarative do
       end)
 
     for {name, {line, _column, _type_value}} <- attrs,
-        not (global_attr && __global__?(caller_module, Atom.to_string(name), global_attr)) do
+        !(global_attr && __global__?(caller_module, Atom.to_string(name), global_attr)) do
       message = "undefined attribute \"#{name}\" for component #{component_fa(call)}"
       warn(message, call.file, line)
     end
