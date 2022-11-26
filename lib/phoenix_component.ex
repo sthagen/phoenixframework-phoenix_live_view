@@ -208,6 +208,15 @@ defmodule Phoenix.Component do
   <span class="bg-blue-200" phx-click="close">You've got mail!</span>
   ```
 
+  Note that the global attribute cannot be provided directly and doing so will emit
+  a warning. In other words, this is invalid:
+
+  ```heex
+  <.notification message="You've got mail!" rest={%{"phx-click" => "close"}} />
+  ```
+
+  ### Included globals
+
   You may also specify which attributes are included in addition to the known globals
   with the `:include` option. For example to support the `form` attribute on a button
   component:
@@ -218,7 +227,7 @@ defmodule Phoenix.Component do
   slot :inner_block
   def button(assigns) do
     ~H"""
-    <button {@rest}><%= render_slot(@inner_block) %>
+    <button {@rest}><%= render_slot(@inner_block) %></button>
     """
   end
   ```
@@ -496,19 +505,18 @@ defmodule Phoenix.Component do
   @doc ~S'''
   The `~H` sigil for writing HEEx templates inside source files.
 
-  > Note: The HEEx HTML formatter requires Elixir >= 1.13.4. See the
-  > `Phoenix.LiveView.HTMLFormatter` for more information on template formatting.
-
   `HEEx` is a HTML-aware and component-friendly extension of Elixir Embedded
   language (`EEx`) that provides:
 
-  * Built-in handling of HTML attributes.
+    * Built-in handling of HTML attributes
 
-  * An HTML-like notation for injecting function components.
+    * An HTML-like notation for injecting function components
 
-  * Compile-time validation of the structure of the template.
+    * Compile-time validation of the structure of the template
 
-  * The ability to minimize the amount of data sent over the wire.
+    * The ability to minimize the amount of data sent over the wire
+
+    * Out-of-the-box code formatting via `mix format`
 
   ## Example
 
@@ -727,6 +735,12 @@ defmodule Phoenix.Component do
   ```heex
   <.error :for={msg <- @errors} :if={msg != nil} message={msg} />
   ```
+
+  ## Code formatting
+
+  You can automatically format HEEx templates (.heex) and `~H` sigils
+  using `Phoenix.LiveView.HTMLFormatter`. Please check that module
+  for more information.
   '''
   defmacro sigil_H({:<<>>, meta, [expr]}, []) do
     unless Macro.Env.has_var?(__CALLER__, {:assigns, nil}) do
