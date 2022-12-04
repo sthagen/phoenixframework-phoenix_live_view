@@ -2084,7 +2084,7 @@ var JS = {
     view.withinTargets(phxTarget, (targetView, targetCtx) => {
       if (eventType === "change") {
         let { newCid, _target, callback } = args;
-        _target = _target || (sourceEl instanceof HTMLInputElement ? sourceEl.name : void 0);
+        _target = _target || (dom_default.isFormInput(sourceEl) ? sourceEl.name : void 0);
         if (_target) {
           pushOpts._target = _target;
         }
@@ -2321,7 +2321,7 @@ var View = class {
     this.href = href;
   }
   isMain() {
-    return this.el.getAttribute(PHX_MAIN) !== null;
+    return this.el.hasAttribute(PHX_MAIN);
   }
   connectParams(liveReferer) {
     let params = this.liveSocket.params(this.el);
@@ -3271,7 +3271,8 @@ var View = class {
     }
   }
   ownsElement(el) {
-    return this.isDead || el.getAttribute(PHX_PARENT_ID) === this.id || maybe(el.closest(PHX_VIEW_SELECTOR), (node) => node.id) === this.id;
+    let parentViewEl = el.closest(PHX_VIEW_SELECTOR);
+    return el.getAttribute(PHX_PARENT_ID) === this.id || parentViewEl && parentViewEl.id === this.id || !parentViewEl && this.isDead;
   }
   submitForm(form, targetCtx, phxEvent, opts = {}) {
     dom_default.putPrivate(form, PHX_HAS_SUBMITTED, true);
@@ -3388,8 +3389,9 @@ var LiveSocket = class {
       } else if (this.main) {
         this.socket.connect();
       } else {
-        this.joinDeadView();
+        this.bindTopLevelEvents({ dead: true });
       }
+      this.joinDeadView();
     };
     if (["complete", "loaded", "interactive"].indexOf(document.readyState) >= 0) {
       doConnect();
@@ -3522,12 +3524,16 @@ var LiveSocket = class {
     return this.socket.channel(topic, params);
   }
   joinDeadView() {
-    this.bindTopLevelEvents({ dead: true });
-    let view = this.newRootView(document.body);
-    view.setHref(this.getHref());
-    view.joinDead();
-    this.main = view;
-    window.requestAnimationFrame(() => view.execNewMounted());
+    let body = document.body;
+    if (body && !this.isPhxView(body) && !this.isPhxView(document.firstElementChild)) {
+      let view = this.newRootView(body);
+      view.setHref(this.getHref());
+      view.joinDead();
+      if (!this.main) {
+        this.main = view;
+      }
+      window.requestAnimationFrame(() => view.execNewMounted());
+    }
   }
   joinRootViews() {
     let rootsFound = false;
@@ -3536,7 +3542,7 @@ var LiveSocket = class {
         let view = this.newRootView(rootEl);
         view.setHref(this.getHref());
         view.join();
-        if (rootEl.getAttribute(PHX_MAIN)) {
+        if (rootEl.hasAttribute(PHX_MAIN)) {
           this.main = view;
         }
       }
@@ -3920,7 +3926,7 @@ var LiveSocket = class {
     if (!this.isConnected()) {
       return browser_default.redirect(href, flash);
     }
-    if (/^\/[^\/]+.*$/.test(href)) {
+    if (/^\/$|^\/[^\/]+.*$/.test(href)) {
       let { protocol, host } = window.location;
       href = `${protocol}//${host}${href}`;
     }

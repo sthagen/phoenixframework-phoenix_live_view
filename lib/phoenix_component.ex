@@ -2,8 +2,9 @@ defmodule Phoenix.Component do
   @moduledoc ~S'''
   Define reusable function components with HEEx templates.
 
-  A function component is any function that receives an assigns map as an argument and returns
-  a rendered struct built with [the `~H` sigil](`sigil_H/2`):
+  A function component is any function that receives an assigns
+  map as an argument and returns a rendered struct built with
+  [the `~H` sigil](`sigil_H/2`):
 
       defmodule MyComponent do
         use Phoenix.Component
@@ -27,8 +28,8 @@ defmodule Phoenix.Component do
   <p>Hello, Jane!</p>
   ```
 
-  If the function component is defined locally, or its module is imported, then the caller can
-  invoke the function directly without specifying the module:
+  If the function component is defined locally, or its module is imported,
+  then the caller can invoke the function directly without specifying the module:
 
   ```heex
   <.greet name="Jane" />
@@ -48,11 +49,9 @@ defmodule Phoenix.Component do
   </.card>
   ```
 
-  Like `Phoenix.LiveView` and `Phoenix.LiveComponent`, function components are implemented using
-  a map of assigns, and follow [the same rules and best practices](../guides/server/assigns-eex.md).
-  However, we typically do not implement function components by manipulating the assigns map
-  directly, as `Phoenix.Component` provides two higher-level abstractions for us:
-  attributes and slots.
+  Note how the `name` attribute automatically becomes the `@name` assign inside
+  function components. This can be further leveraged by using two higher-level
+  abstractions for us: attributes and slots.
 
   ## Attributes
 
@@ -752,7 +751,8 @@ defmodule Phoenix.Component do
       file: __CALLER__.file,
       line: __CALLER__.line + 1,
       caller: __CALLER__,
-      indentation: meta[:indentation] || 0
+      indentation: meta[:indentation] || 0,
+      source: expr
     ]
 
     EEx.compile_string(expr, options)
@@ -2037,12 +2037,12 @@ defmodule Phoenix.Component do
   ```
 
   ```heex
-  <.link href="/the_world" method={:delete} data-confirm="Really?">delete</.link>
+  <.link href="/the_world" method="delete" data-confirm="Really?">delete</.link>
   ```
 
   ## JavaScript dependency
 
-  In order to support links where `:method` is not `:get` or use the above data attributes,
+  In order to support links where `:method` is not `"get"` or use the above data attributes,
   `Phoenix.HTML` relies on JavaScript. You can load `priv/static/phoenix_html.js` into your
   build tool.
 
@@ -2052,7 +2052,7 @@ defmodule Phoenix.Component do
   attributes are supported:
 
   * `data-confirm` - shows a confirmation prompt before generating and submitting the form when
-  `:method` is not `:get`.
+  `:method` is not `"get"`.
 
   ### Overriding the default confirm behaviour
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.4
+
+### Enhancements
+  * Support string upload name to support dynamically generated `allow_upload`'s
+
+### Bug Fixes
+  * Fix undefined _target param when using `JS.push` for form changes
+
 ## 0.18.3 (2022-10-26)
 
 ### Enhancements
@@ -75,6 +83,11 @@ a `:let` usage.
 ### Bug fixes
   - Fix external upload issue where listeners are not cleaned up when an external failure happens on the client
   - Do not debounce `phx-blur`
+
+## 0.17.12 (2022-09-20)
+
+### Enhancements
+  - Add support for upcoming Phoenix 1.7 flash interface
 
 ## 0.17.11 (2022-07-11)
 

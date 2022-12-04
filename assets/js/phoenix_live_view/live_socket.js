@@ -210,8 +210,9 @@ export default class LiveSocket {
       } else if(this.main){
         this.socket.connect()
       } else {
-        this.joinDeadView()
+        this.bindTopLevelEvents({dead: true})
       }
+      this.joinDeadView()
     }
     if(["complete", "loaded", "interactive"].indexOf(document.readyState) >= 0){
       doConnect()
@@ -345,12 +346,14 @@ export default class LiveSocket {
   channel(topic, params){ return this.socket.channel(topic, params) }
 
   joinDeadView(){
-    this.bindTopLevelEvents({dead: true})
-    let view = this.newRootView(document.body)
-    view.setHref(this.getHref())
-    view.joinDead()
-    this.main = view
-    window.requestAnimationFrame(() => view.execNewMounted())
+    let body = document.body
+    if(body && !this.isPhxView(body) && !this.isPhxView(document.firstElementChild)){
+      let view = this.newRootView(body)
+      view.setHref(this.getHref())
+      view.joinDead()
+      if(!this.main){ this.main = view }
+      window.requestAnimationFrame(() => view.execNewMounted())
+    }
   }
 
   joinRootViews(){
@@ -360,7 +363,7 @@ export default class LiveSocket {
         let view = this.newRootView(rootEl)
         view.setHref(this.getHref())
         view.join()
-        if(rootEl.getAttribute(PHX_MAIN)){ this.main = view }
+        if(rootEl.hasAttribute(PHX_MAIN)){ this.main = view }
       }
       rootsFound = true
     })
@@ -739,7 +742,7 @@ export default class LiveSocket {
   historyRedirect(href, linkState, flash){
     // convert to full href if only path prefix
     if(!this.isConnected()){ return Browser.redirect(href, flash) }
-    if(/^\/[^\/]+.*$/.test(href)){
+    if(/^\/$|^\/[^\/]+.*$/.test(href)){
       let {protocol, host} = window.location
       href = `${protocol}//${host}${href}`
     }

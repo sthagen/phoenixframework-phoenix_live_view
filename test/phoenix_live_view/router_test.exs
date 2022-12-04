@@ -1,11 +1,12 @@
 defmodule Phoenix.LiveView.RouterTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
   alias Phoenix.LiveView.{Route, Session}
   alias Phoenix.LiveViewTest.{Endpoint, DashboardLive, DOM}
   alias Phoenix.LiveViewTest.Router.Helpers, as: Routes
+  alias Phoenix.LiveView.LiveReloadTestHelpers, as: Helpers
 
   @endpoint Endpoint
 
@@ -16,6 +17,11 @@ defmodule Phoenix.LiveView.RouterTest do
       Session.verify_session(@endpoint, "lv:#{id}", session_token, static_token)
 
     live_session.session
+  end
+
+  setup_all do
+    Helpers.start_endpoint(@endpoint)
+    :ok
   end
 
   setup config do
@@ -30,7 +36,7 @@ defmodule Phoenix.LiveView.RouterTest do
 
   test "routing with empty session", %{conn: conn} do
     conn = get(conn, "/router/thermo_defaults/123")
-    assert conn.resp_body =~ ~s(session: %{})
+    assert conn.resp_body =~ ~s()
   end
 
   @tag plug_session: %{user_id: "chris"}
@@ -126,8 +132,7 @@ defmodule Phoenix.LiveView.RouterTest do
                    function:
                      Function.capture(Phoenix.LiveViewTest.HaltConnectedMount, :on_mount, 4)
                  }
-               ],
-               session: %{}
+               ]
              }
 
       assert conn |> get(path) |> html_response(200) =~
@@ -149,8 +154,7 @@ defmodule Phoenix.LiveView.RouterTest do
                    stage: :mount,
                    function: Function.capture(Phoenix.LiveViewTest.MountArgs, :on_mount, 4)
                  }
-               ],
-               session: %{}
+               ]
              }
 
       assert {:error, {:live_redirect, %{to: "/lifecycle?called=true&inlined=true"}}} =
@@ -175,8 +179,7 @@ defmodule Phoenix.LiveView.RouterTest do
                    stage: :mount,
                    function: Function.capture(Phoenix.LiveViewTest.OtherOnMount, :on_mount, 4)
                  }
-               ],
-               session: %{}
+               ]
              }
 
       assert {:ok, _, _} = live(conn, path)
@@ -200,8 +203,7 @@ defmodule Phoenix.LiveView.RouterTest do
                    stage: :mount,
                    function: Function.capture(Phoenix.LiveViewTest.OtherOnMount, :on_mount, 4)
                  }
-               ],
-               session: %{}
+               ]
              }
 
       assert {:ok, _, _} = live(conn, path)
@@ -252,8 +254,7 @@ defmodule Phoenix.LiveView.RouterTest do
                Route.live_link_info(@endpoint, Phoenix.LiveViewTest.Router, path)
 
       assert route.live_session.extra == %{
-        layout: {Phoenix.LiveViewTest.LayoutView, :live_override},
-        session: %{}
+        layout: {Phoenix.LiveViewTest.LayoutView, :live_override}
       }
 
       {:ok, view, html} = live(conn, path)
