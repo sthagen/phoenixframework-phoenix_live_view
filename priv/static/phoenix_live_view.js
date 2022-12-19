@@ -493,7 +493,7 @@ var LiveView = (() => {
       if (!input) {
         return;
       }
-      if (!(this.private(input, PHX_HAS_FOCUSED) || this.private(input.form, PHX_HAS_SUBMITTED))) {
+      if (!(this.private(input, PHX_HAS_FOCUSED) || this.private(input, PHX_HAS_SUBMITTED))) {
         el.classList.add(PHX_NO_FEEDBACK_CLASS);
       }
     },
@@ -2436,10 +2436,10 @@ within:
     applyDiff(type, rawDiff, callback) {
       this.log(type, () => ["", clone(rawDiff)]);
       let { diff, reply, events, title } = Rendered.extract(rawDiff);
-      if (title) {
-        dom_default.putTitle(title);
-      }
       callback({ diff, reply, events });
+      if (title) {
+        window.requestAnimationFrame(() => dom_default.putTitle(title));
+      }
     }
     onJoin(resp) {
       let { rendered, container } = resp;
@@ -2741,6 +2741,13 @@ within:
     applyPendingUpdates() {
       this.pendingDiffs.forEach(({ diff, events }) => this.update(diff, events));
       this.pendingDiffs = [];
+      this.eachChild((child) => child.applyPendingUpdates());
+    }
+    eachChild(callback) {
+      let children = this.root.children[this.id] || {};
+      for (let id in children) {
+        callback(this.getChildById(id));
+      }
     }
     onChannel(event, cb) {
       this.liveSocket.onChannel(this.channel, event, (resp) => {
@@ -2764,9 +2771,7 @@ within:
       this.channel.onClose((reason) => this.onClose(reason));
     }
     destroyAllChildren() {
-      for (let id in this.root.children[this.id]) {
-        this.getChildById(id).destroy();
-      }
+      this.eachChild((child) => child.destroy());
     }
     onLiveRedirect(redir) {
       let { to, kind, flash } = redir;
@@ -3295,6 +3300,7 @@ within:
       dom_default.putPrivate(form, PHX_HAS_SUBMITTED, true);
       let phxFeedback = this.liveSocket.binding(PHX_FEEDBACK_FOR);
       let inputs = Array.from(form.elements);
+      inputs.forEach((input) => dom_default.putPrivate(input, PHX_HAS_SUBMITTED, true));
       this.liveSocket.blurActiveElement(this);
       this.pushFormSubmit(form, targetCtx, phxEvent, opts, () => {
         inputs.forEach((input) => dom_default.showError(input, phxFeedback));

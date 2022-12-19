@@ -228,9 +228,8 @@ export default class View {
   applyDiff(type, rawDiff, callback){
     this.log(type, () => ["", clone(rawDiff)])
     let {diff, reply, events, title} = Rendered.extract(rawDiff)
-    if(title){ DOM.putTitle(title) }
-
     callback({diff, reply, events})
+    if(title){ window.requestAnimationFrame(() => DOM.putTitle(title)) }
   }
 
   onJoin(resp){
@@ -553,6 +552,12 @@ export default class View {
   applyPendingUpdates(){
     this.pendingDiffs.forEach(({diff, events}) => this.update(diff, events))
     this.pendingDiffs = []
+    this.eachChild(child => child.applyPendingUpdates())
+  }
+
+  eachChild(callback){
+    let children = this.root.children[this.id] || {}
+    for(let id in children){ callback(this.getChildById(id)) }
   }
 
   onChannel(event, cb){
@@ -580,11 +585,7 @@ export default class View {
     this.channel.onClose(reason => this.onClose(reason))
   }
 
-  destroyAllChildren(){
-    for(let id in this.root.children[this.id]){
-      this.getChildById(id).destroy()
-    }
-  }
+  destroyAllChildren(){ this.eachChild(child => child.destroy()) }
 
   onLiveRedirect(redir){
     let {to, kind, flash} = redir
@@ -1125,6 +1126,7 @@ export default class View {
     DOM.putPrivate(form, PHX_HAS_SUBMITTED, true)
     let phxFeedback = this.liveSocket.binding(PHX_FEEDBACK_FOR)
     let inputs = Array.from(form.elements)
+    inputs.forEach(input => DOM.putPrivate(input, PHX_HAS_SUBMITTED, true))
     this.liveSocket.blurActiveElement(this)
     this.pushFormSubmit(form, targetCtx, phxEvent, opts, () => {
       inputs.forEach(input => DOM.showError(input, phxFeedback))

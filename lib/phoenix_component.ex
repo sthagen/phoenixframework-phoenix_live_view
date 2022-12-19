@@ -1078,10 +1078,10 @@ defmodule Phoenix.Component do
   when none is given:
 
       def my_component(assigns) do
-        assigns = assign_new(assigns, :color, fn -> Enum.random(~w(red green blue)) end)
+        assigns = assign_new(assigns, :bg_color, fn -> Enum.random(~w(bg-red-200 bg-green-200 bg-blue-200)) end)
 
         ~H"""
-        <div class={"bg-#{@color}"}>
+        <div class={@bg_color}>
           Example
         </div>
         """
@@ -2136,7 +2136,10 @@ defmodule Phoenix.Component do
   attr.(:method, :string,
     default: "get",
     doc: """
-    The HTTP method to use with the link.
+    The HTTP method to use with the link. This is intended for usage outside of LiveView
+    and therefore only works with the `href={...}` attribute. It has no effect on `patch`
+    and `navigate` instructions.
+
     In case the method is not `get`, the link is generated inside the form which sets the proper
     information. In order to submit the form, JavaScript must be enabled in the browser.
     """
