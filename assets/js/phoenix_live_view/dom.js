@@ -58,6 +58,32 @@ let DOM = {
     return node.id && DOM.private(node, "destroyed") ? true : false
   },
 
+  wantsNewTab(e){
+    let wantsNewTab = e.ctrlKey || e.shiftKey || e.metaKey || (e.button && e.button === 1)
+    return wantsNewTab || e.target.getAttribute("target") === "_blank"
+  },
+
+  isNewPageHref(href, currentLocation){
+    let url
+    try {
+      url = new URL(href)
+    } catch(e) {
+      try {
+        url = new URL(href, currentLocation)
+      } catch(e) {
+        // bad URL, fallback to let browser try it as external
+        return true
+      }
+    }
+
+    if(url.host === currentLocation.host && url.protocol === currentLocation.protocol){
+      if(url.pathname === currentLocation.pathname && url.search === currentLocation.search){
+        return url.hash === "" && !url.href.endsWith("#")
+      }
+    }
+    return true
+  },
+
   markPhxChildDestroyed(el){
     if(this.isPhxChild(el)){ el.setAttribute(PHX_SESSION, "") }
     this.putPrivate(el, "destroyed", true)
@@ -140,8 +166,12 @@ let DOM = {
 
   putTitle(str){
     let titleEl = document.querySelector("title")
-    let {prefix, suffix} = titleEl.dataset
-    document.title = `${prefix || ""}${str}${suffix || ""}`
+    if(titleEl){
+      let {prefix, suffix} = titleEl.dataset
+      document.title = `${prefix || ""}${str}${suffix || ""}`
+    } else {
+      document.title = str
+    }
   },
 
   debounce(el, event, phxDebounce, defaultDebounce, phxThrottle, defaultThrottle, asyncFilter, callback){

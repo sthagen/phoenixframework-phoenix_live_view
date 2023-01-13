@@ -634,7 +634,10 @@ export default class LiveSocket {
       }
       let phxEvent = target && target.getAttribute(click)
       if(!phxEvent){
-        if(!capture && e.target.href !== undefined){ this.unload() }
+        let href = e.target.href
+        if(!capture && href !== undefined && !DOM.wantsNewTab(e) && DOM.isNewPageHref(href, window.location)){
+          this.unload()
+        }
         return
       }
       if(target.getAttribute("href") === "#"){ e.preventDefault() }
@@ -678,15 +681,13 @@ export default class LiveSocket {
 
       this.requestDOMUpdate(() => {
         if(this.main.isConnected() && (type === "patch" && id === this.main.id)){
-          this.main.pushLinkPatch(href, null)
+          this.main.pushLinkPatch(href, null, () => {
+            this.maybeScroll(scroll)
+          })
         } else {
           this.replaceMain(href, null, () => {
             if(root){ this.replaceRootHistory() }
-            if(typeof(scroll) === "number"){
-              setTimeout(() => {
-                window.scrollTo(0, scroll)
-              }, 0) // the body needs to render before we scroll.
-            }
+            this.maybeScroll(scroll)
           })
         }
       })
@@ -694,8 +695,7 @@ export default class LiveSocket {
     window.addEventListener("click", e => {
       let target = closestPhxBinding(e.target, PHX_LIVE_LINK)
       let type = target && target.getAttribute(PHX_LIVE_LINK)
-      let wantsNewTab = e.metaKey || e.ctrlKey || e.button === 1
-      if(!type || !this.isConnected() || !this.main || wantsNewTab){ return }
+      if(!type || !this.isConnected() || !this.main || DOM.wantsNewTab(e)){ return }
 
       let href = target.href
       let linkState = target.getAttribute(PHX_LINK_STATE)
@@ -717,6 +717,14 @@ export default class LiveSocket {
         }
       })
     }, false)
+  }
+
+  maybeScroll(scroll) {
+    if(typeof(scroll) === "number"){
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scroll)
+      }) // the body needs to render before we scroll.
+    }
   }
 
   dispatchEvent(event, payload = {}){

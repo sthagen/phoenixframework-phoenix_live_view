@@ -1937,6 +1937,13 @@ defmodule Phoenix.Component do
     """
   )
 
+  attr.(:params, :any,
+    doc: """
+    Parameters associated to this form.
+    Can be used to supply input values when the data source is an atom.
+    """
+  )
+
   attr.(:rest, :global,
     include: ~w(autocomplete name rel enctype novalidate target),
     doc: "Additional HTML attributes to add to the form tag."
@@ -1993,10 +2000,10 @@ defmodule Phoenix.Component do
     ~H"""
     <form {@attrs}>
       <%= if @hidden_method && @hidden_method not in ~w(get post) do %>
-        <input name="_method" type="hidden" value={@hidden_method}>
+        <input name="_method" type="hidden" hidden value={@hidden_method}>
       <% end %>
       <%= if @csrf_token do %>
-        <input name="_csrf_token" type="hidden" value={@csrf_token}>
+        <input name="_csrf_token" type="hidden" hidden value={@csrf_token}>
       <% end %>
       <%= render_slot(@inner_block, @form) %>
     </form>

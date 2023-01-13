@@ -321,8 +321,13 @@ defmodule Phoenix.LiveView.ComponentsTest do
       assert [
                {"form", [{"action", "/"}, {"method", "post"}],
                 [
-                  {"input", [{"name", "_csrf_token"}, {"type", "hidden"}, {"value", ^csrf_token}],
-                   []},
+                  {"input",
+                   [
+                     {"name", "_csrf_token"},
+                     {"type", "hidden"},
+                     {"hidden", "hidden"},
+                     {"value", ^csrf_token}
+                   ], []},
                   {"input", [{"id", "myform_foo"}, {"name", "myform[foo]"}, {"type", "text"}], []}
                 ]}
              ] = html
@@ -398,10 +403,54 @@ defmodule Phoenix.LiveView.ComponentsTest do
                   {"phx-change", "valid"}
                 ],
                 [
-                  {"input", [{"name", "_method"}, {"type", "hidden"}, {"value", "put"}], []},
-                  {"input", [{"name", "_csrf_token"}, {"type", "hidden"}, {"value", "123"}], []},
+                  {"input",
+                   [
+                     {"name", "_method"},
+                     {"type", "hidden"},
+                     {"hidden", "hidden"},
+                     {"value", "put"}
+                   ], []},
+                  {"input",
+                   [
+                     {"name", "_csrf_token"},
+                     {"type", "hidden"},
+                     {"hidden", "hidden"},
+                     {"value", "123"}
+                   ], []},
                   {"input", [{"id", "form_foo"}, {"name", "user[foo]"}, {"type", "text"}], []},
                   "\n  [name: \"can't be blank\"]\n\n"
+                ]}
+             ] = html
+    end
+
+    test "generates form with input values supplied by params" do
+      params = %{"foo" => "my", "bar" => "form"}
+      assigns = %{params: params}
+
+      template = ~H"""
+      <.form :let={f} for={:myform} params={@params}>
+        <%= text_input f, :foo %>
+        <%= textarea f, :bar %>
+      </.form>
+      """
+
+      html = parse(template)
+
+      assert [
+               {"form", [],
+                [
+                  {"input",
+                   [
+                     {"id", "myform_foo"},
+                     {"name", "myform[foo]"},
+                     {"type", "text"},
+                     {"value", "my"}
+                   ], []},
+                  {"textarea",
+                   [
+                     {"id", "myform_bar"},
+                     {"name", "myform[bar]"}
+                   ], ["\nform"]}
                 ]}
              ] = html
     end
