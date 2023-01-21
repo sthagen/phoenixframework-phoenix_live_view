@@ -379,7 +379,7 @@ export default class LiveSocket {
   }
 
   redirect(to, flash){
-    this.disconnect()
+    this.unload()
     Browser.redirect(to, flash)
   }
 
@@ -634,8 +634,8 @@ export default class LiveSocket {
       }
       let phxEvent = target && target.getAttribute(click)
       if(!phxEvent){
-        let href = e.target.href
-        if(!capture && href !== undefined && !DOM.wantsNewTab(e) && DOM.isNewPageHref(href, window.location)){
+        let href = e.target instanceof HTMLAnchorElement ? e.target.getAttribute("href") : null
+        if(!capture && href !== null && !DOM.wantsNewTab(e) && DOM.isNewPageHref(href, window.location)){
           this.unload()
         }
         return
@@ -801,17 +801,23 @@ export default class LiveSocket {
       if(!externalFormSubmitted && phxChange && !phxSubmit){
         externalFormSubmitted = true
         e.preventDefault()
-        this.unload()
         this.withinOwners(e.target, view => {
           view.disableForm(e.target)
-          window.requestAnimationFrame(() => e.target.submit()) // safari needs next tick
+          // safari needs next tick
+          window.requestAnimationFrame(() => {
+            if(DOM.isUnloadableFormSubmit(e)){ this.unload() }
+            e.target.submit()
+          })
         })
       }
     }, true)
 
     this.on("submit", e => {
       let phxEvent = e.target.getAttribute(this.binding("submit"))
-      if(!phxEvent){ return this.unload() }
+      if(!phxEvent){
+        if(DOM.isUnloadableFormSubmit(e)){ this.unload() }
+        return
+      }
       e.preventDefault()
       e.target.disabled = true
       this.withinOwners(e.target, view => {

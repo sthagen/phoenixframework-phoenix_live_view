@@ -323,6 +323,9 @@ var LiveView = (() => {
       let wantsNewTab = e.ctrlKey || e.shiftKey || e.metaKey || e.button && e.button === 1;
       return wantsNewTab || e.target.getAttribute("target") === "_blank";
     },
+    isUnloadableFormSubmit(e) {
+      return !e.defaultPrevented && !this.wantsNewTab(e);
+    },
     isNewPageHref(href, currentLocation) {
       let url;
       try {
@@ -3865,8 +3868,8 @@ within:
         }
         let phxEvent = target && target.getAttribute(click);
         if (!phxEvent) {
-          let href = e.target.href;
-          if (!capture && href !== void 0 && !dom_default.wantsNewTab(e) && dom_default.isNewPageHref(href, window.location)) {
+          let href = e.target instanceof HTMLAnchorElement ? e.target.getAttribute("href") : null;
+          if (!capture && href !== null && !dom_default.wantsNewTab(e) && dom_default.isNewPageHref(href, window.location)) {
             this.unload();
           }
           return;
@@ -3916,17 +3919,15 @@ within:
         let href = window.location.href;
         this.requestDOMUpdate(() => {
           if (this.main.isConnected() && (type === "patch" && id === this.main.id)) {
-            this.main.pushLinkPatch(href, null);
+            this.main.pushLinkPatch(href, null, () => {
+              this.maybeScroll(scroll);
+            });
           } else {
             this.replaceMain(href, null, () => {
               if (root) {
                 this.replaceRootHistory();
               }
-              if (typeof scroll === "number") {
-                setTimeout(() => {
-                  window.scrollTo(0, scroll);
-                }, 0);
-              }
+              this.maybeScroll(scroll);
             });
           }
         });
@@ -3958,6 +3959,13 @@ within:
           }
         });
       }, false);
+    }
+    maybeScroll(scroll) {
+      if (typeof scroll === "number") {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, scroll);
+        });
+      }
     }
     dispatchEvent(event, payload = {}) {
       dom_default.dispatchEvent(window, `phx:${event}`, { detail: payload });
@@ -4026,17 +4034,24 @@ within:
         if (!externalFormSubmitted && phxChange && !phxSubmit) {
           externalFormSubmitted = true;
           e.preventDefault();
-          this.unload();
           this.withinOwners(e.target, (view) => {
             view.disableForm(e.target);
-            window.requestAnimationFrame(() => e.target.submit());
+            window.requestAnimationFrame(() => {
+              if (dom_default.isUnloadableFormSubmit(e)) {
+                this.unload();
+              }
+              e.target.submit();
+            });
           });
         }
       }, true);
       this.on("submit", (e) => {
         let phxEvent = e.target.getAttribute(this.binding("submit"));
         if (!phxEvent) {
-          return this.unload();
+          if (dom_default.isUnloadableFormSubmit(e)) {
+            this.unload();
+          }
+          return;
         }
         e.preventDefault();
         e.target.disabled = true;
