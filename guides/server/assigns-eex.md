@@ -1,6 +1,9 @@
 # Assigns and HEEx templates
 
-All of the data in a LiveView is stored in the socket as assigns.
+All of the data in a LiveView is stored in the socket as assigns, which
+is a server side struct in `Phoenix.LiveView.Socket`. Socket state is
+never shared with the client beyond what your template renders.
+
 The `Phoenix.Component.assign/2` and `Phoenix.Component.assign/3`
 functions help store those values. Those values can be accessed
 in the LiveView as `socket.assigns.name` but they are accessed

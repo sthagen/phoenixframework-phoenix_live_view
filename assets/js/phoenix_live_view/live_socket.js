@@ -549,7 +549,7 @@ export default class LiveSocket {
       let files = Array.from(e.dataTransfer.files || [])
       if(!dropTarget || dropTarget.disabled || files.length === 0 || !(dropTarget.files instanceof FileList)){ return }
 
-      LiveUploader.trackFiles(dropTarget, files)
+      LiveUploader.trackFiles(dropTarget, files, e.dataTransfer)
       dropTarget.dispatchEvent(new Event("input", {bubbles: true}))
     })
     this.on(PHX_TRACK_UPLOADS, e => {
@@ -890,7 +890,6 @@ class TransitionSet {
   constructor(){
     this.transitions = new Set()
     this.pendingOps = []
-    this.reset()
   }
 
   reset(){
@@ -914,7 +913,7 @@ class TransitionSet {
     let timer = setTimeout(() => {
       this.transitions.delete(timer)
       onDone()
-      if(this.size() === 0){ this.flushPendingOps() }
+      this.flushPendingOps()
     }, time)
     this.transitions.add(timer)
   }
@@ -924,7 +923,11 @@ class TransitionSet {
   size(){ return this.transitions.size }
 
   flushPendingOps(){
-    this.pendingOps.forEach(op => op())
-    this.pendingOps = []
+    if(this.size() > 0){ return }
+    let op = this.pendingOps.shift()
+    if(op){
+      op()
+      this.flushPendingOps()
+    }
   }
 }

@@ -389,6 +389,9 @@ defmodule Phoenix.LiveView.Channel do
           {:halt, %Socket{} = socket} ->
             {{:noreply, socket}, %{socket: socket, event: event, params: val}}
 
+          {:halt, reply, %Socket{} = socket} ->
+            {{:reply, reply, socket}, %{socket: socket, event: event, params: val}}
+
           {:cont, %Socket{} = socket} ->
             case socket.view.handle_event(event, val, socket) do
               {:noreply, %Socket{} = socket} ->
@@ -824,7 +827,13 @@ defmodule Phoenix.LiveView.Channel do
       end
 
     diff = Diff.render_private(socket, diff)
-    {:diff, diff, %{state | socket: Utils.clear_changed(socket), components: components}}
+
+    new_socket =
+      socket
+      |> Lifecycle.after_render()
+      |> Utils.clear_changed()
+
+    {:diff, diff, %{state | socket: new_socket, components: components}}
   end
 
   defp reply(state, {ref, extra}, status, payload) do

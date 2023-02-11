@@ -3,7 +3,15 @@ defmodule Phoenix.Component.Declarative do
 
   ## Reserved assigns
 
-  @reserved_assigns [:__changed__, :__slot__, :inner_block, :myself, :flash, :socket]
+  @reserved_assigns [
+    :__changed__,
+    :__slot__,
+    :__defaults__,
+    :inner_block,
+    :myself,
+    :flash,
+    :socket
+  ]
 
   @doc false
   def __reserved__, do: @reserved_assigns
@@ -232,6 +240,7 @@ defmodule Phoenix.Component.Declarative do
 
   @doc false
   def __slot__!(module, name, opts, line, file, block_fun) do
+    ensure_used!(module, line, file)
     {doc, opts} = Keyword.pop(opts, :doc, nil)
 
     unless is_binary(doc) or is_nil(doc) or doc == false do
@@ -287,6 +296,7 @@ defmodule Phoenix.Component.Declarative do
 
   @doc false
   def __attr__!(module, name, type, opts, line, file) do
+    ensure_used!(module, line, file)
     slot = Module.get_attribute(module, :__slot__)
 
     if name == :inner_block do
@@ -613,7 +623,15 @@ defmodule Phoenix.Component.Declarative do
             {name, []}
           end
 
-        defaults = attr_defaults ++ slot_defaults
+        defaults =
+          case attr_defaults do
+            [] ->
+              attr_defaults ++ slot_defaults
+
+            [_ | _] ->
+              tracked_defaults = Macro.escape(Map.new(attr_defaults, fn {key, _} -> {key, []} end))
+              [{:__defaults__, tracked_defaults} | attr_defaults] ++ slot_defaults
+          end
 
         {global_name, global_default} =
           case Enum.find(attrs, fn attr -> attr.type == :global end) do
@@ -812,7 +830,7 @@ defmodule Phoenix.Component.Declarative do
           build_attr_values_or_examples(attr)
         ]
       end,
-      if Enum.any?(attrs, & &1.type == :global) do
+      if Enum.any?(attrs, &(&1.type == :global)) do
         "\nGlobal attributes are accepted."
       else
         ""
@@ -1216,5 +1234,15 @@ defmodule Phoenix.Component.Declarative do
   # TODO: Provide column information in error messages
   defp warn(message, file, line) do
     IO.warn(message, file: file, line: line)
+  end
+
+  defp ensure_used!(module, line, file) do
+    if !Module.get_attribute(module, :__attrs__) do
+      compile_error!(
+        line,
+        file,
+        "you must `use Phoenix.Component` to declare attributes. It is currently only imported."
+      )
+    end
   end
 end

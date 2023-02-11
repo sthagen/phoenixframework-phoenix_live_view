@@ -37,6 +37,12 @@ defmodule Phoenix.LiveView do
   Any time a stateful view changes or updates its socket assigns, it is
   automatically re-rendered and the updates are pushed to the client.
 
+  Socket assigns are stateful values kept on the server side in
+  `Phoenix.LiveView.Socket`. This is different from the common stateless
+  HTTP pattern of sending the connection state to the client in the form
+  of a token or cookie and rebuilding the state on the server to service
+  every request.
+
   You begin by rendering a LiveView typically from your router.
   When LiveView is first rendered, the `c:mount/3` callback is invoked
   with the current params, the current session and the LiveView socket.
@@ -94,7 +100,7 @@ defmodule Phoenix.LiveView do
   template, which stands for HTML+EEx. They are an extension of Elixir's
   builtin EEx templates, with support for HTML validation, syntax-based
   components, smart change tracking, and more. You can learn more about
-  the template syntax in `Phoenix.Component.sigil_H/2` (note 
+  the template syntax in `Phoenix.Component.sigil_H/2` (note
   `Phoenix.Component` is automatically imported when you use `Phoenix.LiveView`).
 
   Next, decide where you want to use your LiveView.
@@ -257,7 +263,8 @@ defmodule Phoenix.LiveView do
 
   When rendering a child LiveView, the `:id` option is required to uniquely
   identify the child. A child LiveView will only ever be rendered and mounted
-  a single time, provided its ID remains unchanged.
+  a single time, provided its ID remains unchanged. To force a child to re-mount
+  with new session data, a new ID must be provided.
 
   Given that a LiveView runs on its own process, it is an excellent tool for creating
   completely isolated UI elements, but it is a slightly expensive abstraction if
@@ -309,7 +316,7 @@ defmodule Phoenix.LiveView do
     * [Uploads (External)](uploads-external.md)
   '''
 
-  alias Phoenix.LiveView.Socket
+  alias Phoenix.LiveView.{Socket, LiveStream}
 
   @type unsigned_params :: map
 
@@ -486,23 +493,7 @@ defmodule Phoenix.LiveView do
     opts = Module.get_attribute(env.module, :phoenix_live_opts)
 
     layout =
-      case opts[:layout] do
-        {mod, template} when is_atom(mod) and is_binary(template) ->
-          root_template = Phoenix.LiveView.Utils.normalize_layout(template, "use options")
-          {mod, root_template}
-
-        {mod, template} when is_atom(mod) and is_atom(template) ->
-          template = Phoenix.LiveView.Utils.normalize_layout(template, "use options")
-          {mod, to_string(template)}
-
-        nil ->
-          nil
-
-        other ->
-          raise ArgumentError,
-                ":layout expects a tuple of the form {MyLayoutView, \"my_template.html\"}, " <>
-                  "or {MyLayoutView, :my_template}, got: #{inspect(other)}"
-      end
+      Phoenix.LiveView.Utils.normalize_layout(Keyword.get(opts, :layout, false), "use options")
 
     log =
       case Keyword.fetch(opts, :log) do
@@ -1407,15 +1398,19 @@ defmodule Phoenix.LiveView do
   patches, and regular messages when necessary, and to inject
   common functionality. Hooks may be attached to any of the following
   lifecycle stages: `:mount` (via `on_mount/1`), `:handle_params`,
-  `:handle_event`, and `:handle_info`.
+  `:handle_event`, `:handle_info`, and `:after_render`.
 
   ## Return Values
 
   Lifecycle hooks take place immediately before a given lifecycle
-  callback is invoked on the LiveView. A hook may return `{:halt, socket}`
-  to halt the reduction, otherwise it must return `{:cont, socket}` so
-  the operation may continue until all hooks have been invoked for
-  the current stage.
+  callback is invoked on the LiveView. With the exception of `:after_render`,
+  a hook may return `{:halt, socket}` to halt the reduction, otherwise
+  it must return `{:cont, socket}` so the operation may continue until
+  all hooks have been invoked for the current stage.
+
+  For `:after_render` hooks, the `socket` itself must be returned.
+  Any updates to the socket assigns *will not* trigger a new render
+  or diff calculation to the client.
 
   ## Halting the lifecycle
 
@@ -1436,7 +1431,16 @@ defmodule Phoenix.LiveView do
   attach hooks to intercept specific events before detaching themselves,
   while allowing other events to continue normally.
 
+  ## Replying to events
+
+  Hooks attached to the `:handle_event` stage are able to reply to client events
+  by returning `{:halt, reply, socket}`. This is useful especially for [JavaScript
+  interoperability](js-interop.html#client-hooks-via-phx-hook) because a client hook
+  can push an event and receive a reply.
+
   ## Examples
+
+  Attaching and detaching a hook:
 
       def mount(_params, _session, socket) do
         socket =
@@ -1446,6 +1450,38 @@ defmodule Phoenix.LiveView do
               {:halt, detach_hook(socket, :my_hook, :handle_event)}
 
             _event, _params, socket ->
+              {:cont, socket}
+          end)
+
+        {:ok, socket}
+      end
+
+  Replying to a client event:
+
+      # JavaScript:
+      # let Hooks = {}
+      # Hooks.ClientHook = {
+      #   mounted() {
+      #     this.pushEvent("ClientHook:mounted", {hello: "world"}, (reply) => {
+      #       console.log("received reply:", reply)
+      #     })
+      #   }
+      # }
+      # let liveSocket = new LiveSocket("/live", Socket, {hooks: Hooks, ...})
+
+      def render(assigns) do
+        ~H"\""
+        <div id="my-client-hook" phx-hook="ClientHook"></div>
+        "\""
+      end
+
+      def mount(_params, _session, socket) do
+        socket =
+          attach_hook(socket, :reply_on_client_hook_mounted, :handle_event, fn
+            "ClientHook:mounted", params, socket ->
+              {:halt, params, socket}
+
+            _, _, socket ->
               {:cont, socket}
           end)
 
@@ -1470,4 +1506,206 @@ defmodule Phoenix.LiveView do
       end
   """
   defdelegate detach_hook(socket, name, stage), to: Phoenix.LiveView.Lifecycle
+
+  @doc ~S"""
+  Assigns a new stream to the socket.
+
+  Streams are a mechanism for managing large collections on the client without
+  keeping the resources on the server.
+
+    * `name` - The string or atom name of the key to place under the
+      `@streams` assign.
+    * `items` - The enumerable of items for initial insert
+
+  The following options are supported:
+
+    * `:dom_id` - The optional function to generate each stream item's DOM id.
+      The function accepts each stream item and converts the item to a string id.
+      By default, the `:id` field of a map or struct will be used if the item has
+      such a field, and will be prefixed by the `name` hyphenated with the id.
+      For example, the following definitions are equivalent:
+
+          stream(socket, :songs, songs)
+          stream(socket, :songs, songs, dom_id: &("songs-#{&1.id}))
+
+  Once a stream is defined, a new `@streams` assign is available containing
+  the name of the defined streams. For example, in the above definition, the
+  stream may be referenced as `@streams.songs` in your template. Stream items
+  are temporary and freed from socket state as soon as they are rendered.
+
+  ## Required DOM attributes
+
+  For stream items to be trackable on the client, the following requirements
+  must be met:
+
+    1. The parent DOM container must include a `phx-update="stream"` attribute,
+       along with a unique DOM id.
+    2. Each stream item must include its DOM id on the item's element.
+
+  When consuming a stream in a template, the DOM id and item is passed as a tuple,
+  allowing convenient inclusion of the DOM id for each item. For example:
+
+  ```heex
+  <table>
+    <tbody id="songs" phx-update="stream">
+      <tr
+        :for={{dom_id, song} <- @streams.songs}
+        id={dom_id}
+      >
+        <td><%= song.title %></td>
+        <td><%= song.duration %></td>
+      </tr>
+    </tbody>
+  </table>
+  ```
+  We consume the stream in a for comprehension by referencing the
+  `@streams.songs` assign. We used the computed DOM id to populate
+  the `<tr>` id, then we render the table row as usual.
+
+  Now `stream_insert/3` and `stream_delete/3` may be issued and new rows will
+  be inserted or deleted from the client.
+  """
+  def stream(socket, name, items, opts \\ []) do
+    opts = Keyword.merge(opts, id: Phoenix.LiveView.Utils.random_id())
+
+    socket
+    |> Phoenix.Component.assign_new(:streams, fn -> %{__changed__: MapSet.new()} end)
+    |> assign_stream(name, LiveStream.new(name, items, opts))
+    |> attach_hook(name, :after_render, fn hook_socket ->
+      if name in hook_socket.assigns.streams.__changed__ do
+        Phoenix.Component.update(hook_socket, :streams, fn streams ->
+          streams
+          |> Map.update!(:__changed__, &MapSet.delete(&1, name))
+          |> Map.update!(name, &LiveStream.prune(&1))
+        end)
+      else
+        hook_socket
+      end
+    end)
+  end
+
+  @doc """
+  Inserts a new item or updates an existing item in the stream.
+
+  By default, the item is appended to the parent DOM container.
+  The `:at` option may be provided to insert or update an item
+  to a particular index in the collection on the client.
+
+  ## Examples
+
+  Imagine you define a stream on mount with a single item:
+
+      stream(socket, :songs, [%Song{id: 1, title: "Song 1"}])
+
+  Then, in a callback such as `handle_info` or `handle_event`, you
+  can append a new song:
+
+      stream_insert(socket, :songs, %Song{id: 2, title: "Song 2"})
+
+  Or prepend a new song with `at: 0`:
+
+      stream_insert(socket, :songs, %Song{id: 2, title: "Song 2"}, at: 0)
+
+  Or updating an existing song, while also moving it to the top of the collection:
+
+      stream_insert(socket, :songs, %Song{id: 1, title: "Song 1 updated"}, at: 0)
+
+  ## Updating Items
+
+  As shown, an existing item on the client can be updated by issuing a `stream_insert` for
+  the existing item. When the client updates an existing item with an "append" operation
+  (passing the `at: -1` option), the item will remain in the same location as it was
+  previously, and will not be moved to the end of the parent children. To both update an
+  existing item and move it to the end of a collection, issue a `stream_delete`, followed
+  by a `stream_insert`. For example:
+
+      song = get_song!(id)
+
+      socket
+      |> stream_delete(:songs, song)
+      |> stream_insert(:songs, song, at: -1)
+
+  See `stream_delete/3` for more information on deleting items.
+  """
+  def stream_insert(%Socket{} = socket, name, item, opts \\ []) do
+    at = Keyword.get(opts, :at, -1)
+    update_stream(socket, name, &LiveStream.insert_item(&1, item, at))
+  end
+
+  @doc """
+  Deletes an item from the stream.
+
+  The item's DOM is computed from the `:dom_id` provided in the `stream/3` definition.
+  Delete information for this DOM id is sent to the client and the item's element
+  is removed from the DOM, following the same behavior of element removal, such as
+  invoking `phx-remove` commands and executing client hook `destroyed()` callbacks.
+
+  ## Examples
+
+      def handle_event("delete", %{"id" => id})
+        song = get_song!(id)
+        {:noreply, stream_delete(socket, :songs, song)}
+      end
+
+  See `stream_delete_by_dom_id/3` to remove an item without requiring the
+  original datastructure.
+  """
+  def stream_delete(socket, name, item) do
+    update_stream(socket, name, &LiveStream.delete_item(&1, item))
+  end
+
+  @doc ~S'''
+  Deletes an item from the stream given its computed DOM id.
+
+  Behaves just like `stream_delete/3`, but accept the precomputed DOM id,
+  which allows deleting from a stream without fetching or building the original
+  stream datastructure.
+
+  ## Examples
+
+      def render(assigns) do
+        ~H"""
+        <table>
+          <tbody id="songs" phx-update="stream">
+            <tr
+              :for={{dom_id, song} <- @streams.songs}
+              id={dom_id}
+            >
+              <td><%= song.title %></td>
+              <td><button phx-click={JS.push("delete", value: %{id: dom_id})}>delete</button></td>
+            </tr>
+          </tbody>
+        </table>
+        """
+      end
+
+      def handle_event("delete", %{"id" => dom_id})
+        {:noreply, stream_delete_by_dom_id(socket, :songs, dom_id)}
+      end
+  '''
+  def stream_delete_by_dom_id(socket, name, id) do
+    update_stream(socket, name, &LiveStream.delete_item_by_dom_id(&1, id))
+  end
+
+  defp assign_stream(socket, name, %LiveStream{} = stream) do
+    Phoenix.Component.update(socket, :streams, fn streams ->
+      streams
+      |> Map.put(name, stream)
+      |> Map.update!(:__changed__, &MapSet.put(&1, name))
+    end)
+  end
+
+  defp update_stream(socket, name, func) do
+    Phoenix.Component.update(socket, :streams, fn streams ->
+      stream =
+        case Map.fetch(streams, name) do
+          {:ok, stream} -> stream
+          :error -> raise ArgumentError, "no stream with name #{inspect(name)} previously defined"
+        end
+
+      streams
+      |> Map.put(name, func.(stream))
+      |> Map.update!(:__changed__, &MapSet.put(&1, name))
+    end)
+  end
 end

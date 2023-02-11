@@ -676,16 +676,15 @@ defmodule Phoenix.Component do
   caller. For an example, see how `form/1` works:
 
   ```heex
-  <.form :let={f} for={@changeset} phx-change="validate" phx-submit="save">
-    <%= label(f, :username) %>
-    <%= text_input(f, :username) %>
+  <.form :let={f} for={@form} phx-change="validate" phx-submit="save">
+    <.input field={f[:username]} type="text" />
     ...
   </.form>
   ```
 
-  Notice how the variable `f`, defined by `.form`, is used by `label` and
-  `text_input`. The `Phoenix.Component` module has detailed documentation on
-  how to use and implement such functionality.
+  Notice how the variable `f`, defined by `.form` is used by your `input` component.
+  The `Phoenix.Component` module has detailed documentation on how to use and
+  implement such functionality.
 
   #### :if and :for
 
@@ -1252,6 +1251,10 @@ defmodule Phoenix.Component do
 
   def assign(%{__changed__: changed} = assigns, key, value) do
     case assigns do
+      # force assign the key if the attribute was declared with default
+      %{^key => ^value, __defaults__: %{^key => _}} ->
+        Phoenix.LiveView.Utils.force_assign(assigns, changed, key, value)
+
       %{^key => ^value} ->
         assigns
 
@@ -1374,13 +1377,13 @@ defmodule Phoenix.Component do
   you could do:
 
       def handle_event("submitted", params, socket) do
-        {:noreply, to_form(params)}
+        {:noreply, assign(socket, form: to_form(params))}
       end
 
   However, most typically, we specify a name to nest the parameters:
 
       def handle_event("submitted", %{"user" => user_params}, socket) do
-        {:noreply, to_form(user_params, as: :user)}
+        {:noreply, assign(socket, form: to_form(user_params, as: :user))}
       end
 
   When using changesets, the name `:as` is automatically retrieved
@@ -1407,7 +1410,8 @@ defmodule Phoenix.Component do
 
   If an existing `Phoenix.HTML.Form` struct is given, the
   options below will override its existing values if given.
-  Then the remaining of the struct is returned unchanged.
+  Then the remaining options are merged with the existing
+  form options.
 
   ## Options
 
@@ -1422,20 +1426,48 @@ defmodule Phoenix.Component do
   def to_form(data, options \\ [])
 
   def to_form(%Phoenix.HTML.Form{} = data, options) do
-    case Keyword.fetch(options, :as) do
-      {:ok, as} ->
-        name = if as == nil, do: as, else: to_string(as)
-        %{data | name: name, id: Keyword.get(options, :id) || name}
+    {name, id} =
+      case Keyword.fetch(options, :as) do
+        {:ok, as} ->
+          name = if as == nil, do: as, else: to_string(as)
+          {name, Keyword.get(options, :id) || name}
 
-      :error ->
-        case Keyword.fetch(options, :id) do
-          {:ok, id} -> %{data | id: id}
-          :error -> data
-        end
-    end
+        :error ->
+          case Keyword.fetch(options, :id) do
+            {:ok, id} -> {data.name, id}
+            :error -> {data.name, data.id}
+          end
+      end
+
+    {_as, options} = Keyword.pop(options, :as)
+    {errors, options} = Keyword.pop(options, :errors, data.errors)
+    options = Keyword.merge(data.options, options)
+
+    %{data | errors: errors, id: id, name: name, options: options}
   end
 
   def to_form(data, options) do
+    if is_atom(data) do
+      IO.warn("""
+      Passing an atom to "for" in the form component is deprecated.
+      Instead of:
+
+          <.form :let={f} for={#{inspect(data)}} ...>
+
+      You might do:
+
+          <.form :let={f} for={%{}} as={#{inspect(data)} ...>
+
+      Or, if you prefer, use to_form to create a form in your LiveView:
+
+          assign(socket, form: to_form(%{}, as: #{inspect(data)}))
+
+      and then use it in your templates (no :let required):
+
+          <.form for={@form}>
+      """)
+    end
+
     Phoenix.HTML.FormData.to_form(data, options)
   end
 
@@ -1446,6 +1478,9 @@ defmodule Phoenix.Component do
 
     * `:root` - The root directory to embed files. Defaults to the current
       module's directory (`__DIR__`)
+    * `:suffix` - The string value to append to embedded function names. By
+      default, function names will be the name of the template file excluding
+      the format and engine.
 
   A wildcard pattern may be used to select all files within a directory tree.
   For example, imagine a directory listing:
@@ -1479,18 +1514,41 @@ defmodule Phoenix.Component do
         def about_page(assigns)
       end
 
-  Multiple invocations of `embed_templates` is also supported.
+  Multiple invocations of `embed_templates` is also supported, which can be
+  useful if you have more than one template format. For example:
+
+      defmodule MyAppWeb.Emails do
+        use Phoenix.Component
+
+        embed_templates "emails/*.html", suffix: "_html"
+        embed_templates "emails/*.text", suffix: "_text"
+      end
+
+  Note: this function is the same as `Phoenix.Template.embed_templates/2`.
+  It is also provided here for convenience and documentation purposes.
+  Therefore, if you want to embed templates for other formats, which are
+  not related to `Phoenix.Component`, prefer to
+  `import Phoenix.Template, only: [embed_templates: 1]` than this module.
   """
   @doc type: :macro
   defmacro embed_templates(pattern, opts \\ []) do
-    quote do
+    quote bind_quoted: [pattern: pattern, opts: opts] do
       Phoenix.Template.compile_all(
-        &Phoenix.Component.__embed__/1,
-        Path.expand(unquote(opts)[:root] || __DIR__, __DIR__),
-        unquote(pattern) <> ".html"
+        &Phoenix.Component.__embed__(&1, opts[:suffix]),
+        Path.expand(opts[:root] || __DIR__, __DIR__),
+        pattern
       )
     end
   end
+
+  @doc false
+  def __embed__(path, suffix),
+    do:
+      path
+      |> Path.basename()
+      |> Path.rootname()
+      |> Path.rootname()
+      |> Kernel.<>(suffix || "")
 
   ## Declarative assigns API
 
@@ -1516,9 +1574,6 @@ defmodule Phoenix.Component do
 
     [conditional, imports]
   end
-
-  @doc false
-  def __embed__(path), do: path |> Path.basename() |> Path.rootname() |> Path.rootname()
 
   @doc ~S'''
   Declares a function component slot.
@@ -1955,9 +2010,9 @@ defmodule Phoenix.Component do
   the inputs would otherwise be cleared. Alternatively, you can use `phx-update="ignore"`
   on the form to discard any updates.
 
-  ### Non-form `:for` attributes
+  ### Using the `for` attribute
 
-  The `:for` attribute can also be a map or an Ecto.Changeset. In such cases,
+  The `for` attribute can also be a map or an Ecto.Changeset. In such cases,
   a form will be created on the fly, and you can capture it using `:let`:
 
   ```heex
@@ -1968,7 +2023,7 @@ defmodule Phoenix.Component do
   >
   ```
 
-  However, such approached is discouraged in LiveView for two reasons:
+  However, such approach is discouraged in LiveView for two reasons:
 
     * LiveView can better optimize your code if you access the form fields
       using `@form[:field]` rather than through the let-variable `form`
@@ -2085,7 +2140,13 @@ defmodule Phoenix.Component do
   def form(assigns) do
     # Extract options and then to the same call as form_for
     action = assigns[:action]
-    form_for = assigns[:for] || raise ArgumentError, "missing :for assign to form"
+
+    form_for =
+      case assigns[:for] do
+        nil -> %{}
+        other -> other
+      end
+
     form_options = assigns_to_attributes(Map.merge(assigns, assigns.rest), [:action, :for, :rest])
 
     # Since FormData may add options, read the actual options from form
@@ -2140,6 +2201,103 @@ defmodule Phoenix.Component do
   defp form_method(nil), do: {"post", nil}
   defp form_method(method) when method in ~w(get post), do: {method, nil}
   defp form_method(method) when is_binary(method), do: {"post", method}
+
+  @doc """
+  Renders nested form inputs for associations or embeds.
+
+  [INSERT LVATTRDOCS]
+
+  ## Examples
+
+  ```heex
+  <.form
+    :let={f}
+    phx-change="change_name"
+  >
+    <.inputs_for :let={f_nested} field={f[:nested]}>
+      <.input type="text" field={f_nested[:name]} />
+    </.inputs_for>
+  </.form>
+  ```
+  """
+  @doc type: :component
+  attr.(:field, Phoenix.HTML.FormField,
+    required: true,
+    doc: "A %Phoenix.HTML.Form{}/field name tuple, for example: {@form[:email]}."
+  )
+
+  attr.(:id, :string,
+    doc: """
+    The id to be used in the form, defaults to the concatenation of the given
+    field to the parent form id.
+    """
+  )
+
+  attr.(:as, :atom,
+    doc: """
+    The name to be used in the form, defaults to the concatenation of the given
+    field to the parent form name.
+    """
+  )
+
+  attr.(:default, :any, doc: "The value to use if none is available.")
+
+  attr.(:prepend, :list,
+    doc: """
+    The values to prepend when rendering. This only applies if the field value
+    is a list and no parameters were sent through the form.
+    """
+  )
+
+  attr.(:append, :list,
+    doc: """
+    The values to append when rendering. This only applies if the field value
+    is a list and no parameters were sent through the form.
+    """
+  )
+
+  attr.(:skip_hidden, :boolean,
+    default: false,
+    doc: """
+    Skip the automatic rendering of hidden fields to allow for more tight control
+    over the generated markup.
+    """
+  )
+
+  slot.(:inner_block, required: true, doc: "The content rendered for each nested form.")
+
+  def inputs_for(assigns) do
+    %Phoenix.HTML.FormField{field: field_name, form: form} = assigns.field
+    options = assigns |> Map.take([:id, :as, :default, :append, :prepend]) |> Keyword.new()
+
+    options =
+      form.options
+      |> Keyword.take([:multipart])
+      |> Keyword.merge(options)
+
+    assigns = assign(assigns, :forms, form.impl.to_form(form.source, form, field_name, options))
+
+    ~H"""
+    <%= for finner <- @forms do %>
+      <%= unless @skip_hidden do %>
+        <%= for {name, value_or_values} <- finner.hidden,
+                name = name_for_value_or_values(finner, name, value_or_values),
+                value <- List.wrap(value_or_values) do %>
+          <input type="hidden" name={name} value={value} />
+        <% end %>
+      <% end %>
+      <%= render_slot(@inner_block, finner) %>
+    <% end %>
+    """
+  end
+
+  defp name_for_value_or_values(form, field, values) when is_list(values) do
+    Phoenix.HTML.Form.input_name(form, field) <> "[]"
+  end
+
+  defp name_for_value_or_values(form, field, _value) do
+    Phoenix.HTML.Form.input_name(form, field)
+  end
 
   @doc """
   Generates a link for live and href navigation.
@@ -2598,7 +2756,7 @@ defmodule Phoenix.Component do
     <:separator>
       <span class="sep">|</span>
     </:separator>
-    <%= item.name %>
+    <%= item %>
   </.intersperse>
   ```
 
