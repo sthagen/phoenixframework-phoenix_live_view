@@ -528,6 +528,18 @@ var LiveView = (() => {
         el.classList.add(PHX_NO_FEEDBACK_CLASS);
       }
     },
+    resetForm(form, phxFeedbackFor) {
+      Array.from(form.elements).forEach((input) => {
+        let query = `[${phxFeedbackFor}="${input.id}"],
+                   [${phxFeedbackFor}="${input.name}"],
+                   [${phxFeedbackFor}="${input.name.replace(/\[\]$/, "")}"]`;
+        this.deletePrivate(input, PHX_HAS_FOCUSED);
+        this.deletePrivate(input, PHX_HAS_SUBMITTED);
+        this.all(document, query, (feedbackEl) => {
+          feedbackEl.classList.add(PHX_NO_FEEDBACK_CLASS);
+        });
+      });
+    },
     showError(inputEl, phxFeedbackFor) {
       if (inputEl.id || inputEl.name) {
         this.all(inputEl.form, `[${phxFeedbackFor}="${inputEl.id}"], [${phxFeedbackFor}="${inputEl.name}"]`, (el) => {
@@ -2273,10 +2285,7 @@ within:
       this.addOrRemoveClasses(el, [], names, transition, time, view);
     },
     exec_transition(eventType, phxEvent, view, sourceEl, el, { time, transition }) {
-      let [transition_start, running, transition_end] = transition;
-      let onStart = () => this.addOrRemoveClasses(el, transition_start.concat(running), []);
-      let onDone = () => this.addOrRemoveClasses(el, transition_end, transition_start.concat(running));
-      view.transition(time, onStart, onDone);
+      this.addOrRemoveClasses(el, [], [], transition, time, view);
     },
     exec_toggle(eventType, phxEvent, view, sourceEl, el, { display, ins, outs, time }) {
       this.toggle(eventType, view, el, display, ins, outs, time);
@@ -2327,7 +2336,8 @@ within:
           }
           let onStart = () => {
             this.addOrRemoveClasses(el, inStartClasses, outClasses.concat(outStartClasses).concat(outEndClasses));
-            dom_default.putSticky(el, "toggle", (currentEl) => currentEl.style.display = display || "block");
+            let stickyDisplay = display || this.defaultDisplay(el);
+            dom_default.putSticky(el, "toggle", (currentEl) => currentEl.style.display = stickyDisplay);
             window.requestAnimationFrame(() => {
               this.addOrRemoveClasses(el, inClasses, []);
               window.requestAnimationFrame(() => this.addOrRemoveClasses(el, inEndClasses, inStartClasses));
@@ -2349,7 +2359,8 @@ within:
         } else {
           window.requestAnimationFrame(() => {
             el.dispatchEvent(new Event("phx:show-start"));
-            dom_default.putSticky(el, "toggle", (currentEl) => currentEl.style.display = display || "block");
+            let stickyDisplay = display || this.defaultDisplay(el);
+            dom_default.putSticky(el, "toggle", (currentEl) => currentEl.style.display = stickyDisplay);
             el.dispatchEvent(new Event("phx:show-end"));
           });
         }
@@ -2394,6 +2405,9 @@ within:
     },
     filterToEls(sourceEl, { to }) {
       return to ? dom_default.all(document, to) : [sourceEl];
+    },
+    defaultDisplay(el) {
+      return { tr: "table-row", td: "table-cell" }[el.tagName.toLowerCase()] || "block";
     }
   };
   var js_default = JS;
@@ -4194,6 +4208,14 @@ within:
           });
         }, false);
       }
+      this.on("reset", (e) => {
+        let form = e.target;
+        dom_default.resetForm(form, this.binding(PHX_FEEDBACK_FOR));
+        let input = Array.from(form.elements).find((el) => el.type === "reset");
+        window.requestAnimationFrame(() => {
+          input.dispatchEvent(new Event("input", { bubbles: true, cancelable: false }));
+        });
+      });
     }
     debounce(el, event, eventType, callback) {
       if (eventType === "blur" || eventType === "focusout") {

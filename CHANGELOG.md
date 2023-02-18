@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.15 (2023-02-16)
+
+### Bug Fixes
+  * Fix `JS.transition` applying incorrect classes
+
+### Enhancements
+  * Reset phx-feedback-for errors on `type="reset"` inputs and buttons
+
+## 0.18.14 (2023-02-14)
+
+### Bug Fixes
+  * Fix LiveViewTest failing to find main live view
+
 ## 0.18.13 (2023-02-10)
 
 ### Enhancements

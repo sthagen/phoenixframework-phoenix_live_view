@@ -90,10 +90,7 @@ let JS = {
   },
 
   exec_transition(eventType, phxEvent, view, sourceEl, el, {time, transition}){
-    let [transition_start, running, transition_end] = transition
-    let onStart = () => this.addOrRemoveClasses(el, transition_start.concat(running), [])
-    let onDone = () => this.addOrRemoveClasses(el, transition_end, transition_start.concat(running))
-    view.transition(time, onStart, onDone)
+    this.addOrRemoveClasses(el, [], [], transition, time, view)
   },
 
   exec_toggle(eventType, phxEvent, view, sourceEl, el, {display, ins, outs, time}){
@@ -152,7 +149,8 @@ let JS = {
         if(eventType === "remove"){ return }
         let onStart = () => {
           this.addOrRemoveClasses(el, inStartClasses, outClasses.concat(outStartClasses).concat(outEndClasses))
-          DOM.putSticky(el, "toggle", currentEl => currentEl.style.display = (display || "block"))
+          let stickyDisplay = display || this.defaultDisplay(el)
+          DOM.putSticky(el, "toggle", currentEl => currentEl.style.display = stickyDisplay)
           window.requestAnimationFrame(() => {
             this.addOrRemoveClasses(el, inClasses, [])
             window.requestAnimationFrame(() => this.addOrRemoveClasses(el, inEndClasses, inStartClasses))
@@ -174,7 +172,8 @@ let JS = {
       } else {
         window.requestAnimationFrame(() => {
           el.dispatchEvent(new Event("phx:show-start"))
-          DOM.putSticky(el, "toggle", currentEl => currentEl.style.display = display || "block")
+          let stickyDisplay = display || this.defaultDisplay(el)
+          DOM.putSticky(el, "toggle", currentEl => currentEl.style.display = stickyDisplay)
           el.dispatchEvent(new Event("phx:show-end"))
         })
       }
@@ -225,6 +224,10 @@ let JS = {
 
   filterToEls(sourceEl, {to}){
     return to ? DOM.all(document, to) : [sourceEl]
+  },
+
+  defaultDisplay(el){
+    return {tr: "table-row", td: "table-cell"}[el.tagName.toLowerCase()] || "block"
   }
 }
 
