@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView.MixProject do
   use Mix.Project
 
-  @version "0.18.16"
+  @version "0.18.17"
 
   def project do
     [
@@ -72,30 +72,41 @@ defmodule Phoenix.LiveView.MixProject do
   defp before_closing_body_tag(:html) do
     """
     <script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.0.2/dist/mermaid.esm.min.mjs';
     mermaid.initialize({
       securityLevel: 'loose',
       theme: 'base'
     });
     </script>
     <style>
-    pre > code.mermaid text.flowchartTitleText {
+    code.mermaid text.flowchartTitleText {
       fill: var(--textBody) !important;
     }
-    pre > code.mermaid g.cluster > rect {
+    code.mermaid g.cluster > rect {
       fill: var(--background) !important;
       stroke: var(--neutralBackground) !important;
     }
-    pre > code.mermaid g.edgePaths > path {
+    code.mermaid g.cluster[id$="__transparent"] > rect {
+      fill-opacity: 0 !important;
+      stroke: none !important;
+    }
+    code.mermaid g.nodes span.nodeLabel > em {
+      font-style: normal;
+      background-color: white;
+      opacity: 0.5;
+      padding: 1px 2px;
+      border-radius: 5px;
+    }
+    code.mermaid g.edgePaths > path {
       stroke: var(--textBody) !important;
     }
-    pre > code.mermaid g.edgeLabels span.edgeLabel:not(:empty) {
+    code.mermaid g.edgeLabels span.edgeLabel:not(:empty) {
       background-color: var(--textBody) !important;
       padding: 3px 5px !important;
       border-radius:25%;
       color: var(--background) !important;
     }
-    pre > code.mermaid .marker {
+    code.mermaid .marker {
       fill: var(--textBody) !important;
       stroke: var(--textBody) !important;
     }

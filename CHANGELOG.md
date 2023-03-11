@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.18.17
+## 0.18.17 (2023-03-09)
+
+### Bug Fixes
+  * Fix callbacks like `handle_info` failing to be invoked in development after a code change with the Phoenix code reloader
 
 ### Enhancements
   * Support [`submitter`](https://developer.mozilla.org/en-US/docs/Web/API/SubmitEvent/submitter) on form submit events.
+  * Avoid compile-time dependency for `attr` when referencing structs
 
 ## 0.18.16 (2023-02-23)
 
@@ -11,7 +15,7 @@
   * Support streams in Live Components
   * Optimize plug error translation when a Plug.Exception is raised over connected LiveView
 
-## Bug Fixes
+### Bug Fixes
   * Fix formatter issues when there are multiple HTML comments
 
 ## 0.18.15 (2023-02-16)
