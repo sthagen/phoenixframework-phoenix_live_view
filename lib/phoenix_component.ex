@@ -498,7 +498,8 @@ defmodule Phoenix.Component do
 
   alias Phoenix.LiveView.{Static, Socket}
   @reserved_assigns Phoenix.Component.Declarative.__reserved__()
-  @non_assignables [:uploads, :streams, :live_action, :socket, :myself]
+  # Note we allow live_action as it may be passed down to a component, so it is not listed
+  @non_assignables [:uploads, :streams, :socket, :myself]
 
   @doc ~S'''
   The `~H` sigil for writing HEEx templates inside source files.
@@ -607,20 +608,6 @@ defmodule Phoenix.Component do
 
   The expression inside `{...}` must be either a keyword list or a map containing
   the key-value pairs representing the dynamic attributes.
-
-  You can pair this notation with `assigns_to_attributes/2` to strip out any internal
-  LiveView attributes and user-defined assigns from being expanded into the HTML tag:
-
-  ```heex
-  <div {assigns_to_attributes(assigns, [:visible])}>
-    ...
-  </div>
-  ```
-
-  The above would add all caller attributes into the HTML, but strip out LiveView
-  assigns like slots, as well as user-defined assigns like `:visible` that are not
-  meant to be added to the HTML itself. This approach is useful to allow a component
-  to accept arbitrary HTML attributes like class, ARIA attributes, etc.
 
   ### HEEx extension: Defining function components
 
@@ -761,8 +748,8 @@ defmodule Phoenix.Component do
   @doc ~S'''
   Filters the assigns as a list of keywords for use in dynamic tag attributes.
 
-  Useful for transforming caller assigns into dynamic attributes while
-  stripping reserved keys from the result.
+  One should prefer to use declarative assigns and `:global` attributes
+  over this function.
 
   ## Examples
 
@@ -2144,7 +2131,11 @@ defmodule Phoenix.Component do
         other -> other
       end
 
-    form_options = assigns_to_attributes(Map.merge(assigns, assigns.rest), [:action, :for, :rest])
+    form_options =
+      assigns
+      |> Map.take([:as, :csrf_token, :errors, :method, :multipart])
+      |> Map.merge(assigns.rest)
+      |> Map.to_list()
 
     # Since FormData may add options, read the actual options from form
     %{options: opts} = form = to_form(form_for, form_options)
@@ -2308,17 +2299,17 @@ defmodule Phoenix.Component do
   ```
 
   ```heex
-  <.link navigate={Routes.page_path(@socket, :index)} class="underline">home</.link>
+  <.link navigate={~p"/"} class="underline">home</.link>
   ```
 
   ```heex
-  <.link navigate={Routes.live_path(@socket, MyLive, dir: :asc)} replace={false}>
+  <.link navigate={~p"/?sort=asc"} replace={false}>
     Sort By Price
   </.link>
   ```
 
   ```heex
-  <.link patch={Routes.page_path(@socket, :index, :details)}>view details</.link>
+  <.link patch={~p"/details"}>view details</.link>
   ```
 
   ```heex

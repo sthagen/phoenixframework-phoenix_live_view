@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.18-dev
+
+### Bug fixes
+  * Allow `:live_action` to be assigned in a component
+  * Only filter internal function component attributes in `assigns_to_attributes`
+
 ## 0.18.17 (2023-03-09)
 
 ### Bug Fixes
@@ -8,6 +14,7 @@
 ### Enhancements
   * Support [`submitter`](https://developer.mozilla.org/en-US/docs/Web/API/SubmitEvent/submitter) on form submit events.
   * Avoid compile-time dependency for `attr` when referencing structs
+  * Validate reserved assigns. Attempting to assign `:uploads`, `:streams`, `:live_action`, `:socket`, `:myself` will now raise in `LiveView` and `LiveComponent`
 
 ## 0.18.16 (2023-02-23)
 
