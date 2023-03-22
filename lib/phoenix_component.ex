@@ -720,6 +720,9 @@ defmodule Phoenix.Component do
   <.error :for={msg <- @errors} :if={msg != nil} message={msg} />
   ```
 
+  Note that unlike Elixir's regular `for`, HEEx' `:for` does not support multiple
+  generators in one expression.
+
   ## Code formatting
 
   You can automatically format HEEx templates (.heex) and `~H` sigils
@@ -1383,7 +1386,7 @@ defmodule Phoenix.Component do
       to_form(%{"search" => nil}, errors: [search: [{"Can't be blank", []}]])
 
   If an existing `Phoenix.HTML.Form` struct is given, the
-  options below will override its existing values if given.
+  options above will override its existing values if given.
   Then the remaining options are merged with the existing
   form options.
   """
@@ -2584,7 +2587,7 @@ defmodule Phoenix.Component do
     assigns =
       assigns
       |> assign(:tag, tag)
-      |> assign(:escaped_attrs, Phoenix.HTML.attributes_escape(rest))
+      |> assign(:escaped_attrs, Phoenix.LiveView.TagEngine.attributes_escape(rest))
 
     if assigns.inner_block != [] do
       ~H"""
