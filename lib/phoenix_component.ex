@@ -1249,7 +1249,11 @@ defmodule Phoenix.Component do
           "#{inspect(assign)} is a reserved assign by LiveView and it cannot be set directly"
   end
 
-  defp validate_assign_key!(_key), do: :ok
+  defp validate_assign_key!(key) when is_atom(key), do: :ok
+
+  defp validate_assign_key!(key) do
+    raise ArgumentError, "assigns in LiveView must be atoms, got: #{inspect(key)}"
+  end
 
   @doc """
   Updates an existing `key` with `fun` in the given `socket_or_assigns`.
@@ -1389,6 +1393,10 @@ defmodule Phoenix.Component do
   options above will override its existing values if given.
   Then the remaining options are merged with the existing
   form options.
+
+  Errors in a form are only displayed if the changeset's `action`
+  field is set (and it is not set to `:ignore`). Refer to
+  [a note on :errors for more information](#form/1-a-note-on-errors).
   """
   def to_form(data_or_params, options \\ [])
 
