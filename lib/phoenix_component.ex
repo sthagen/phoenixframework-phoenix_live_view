@@ -1891,15 +1891,6 @@ defmodule Phoenix.Component do
     end
   end
 
-  def live_component(component) when is_atom(component) do
-    IO.warn(
-      "<%= live_component Component %> is deprecated, " <>
-        "please use <.live_component module={Component} id=\"hello\" /> inside HEEx templates instead"
-    )
-
-    Phoenix.LiveView.Helpers.__live_component__(component.__live__(), %{}, nil)
-  end
-
   @doc """
   Renders a title with automatic prefix/suffix on `@page_title` updates.
 
@@ -2639,17 +2630,13 @@ defmodule Phoenix.Component do
   @doc """
   Builds a file input tag for a LiveView upload.
 
-  ## Attributes
-
-  * `:upload` - The `%Phoenix.LiveView.UploadConfig{}` struct.
-
-  Arbitrary attributes may be passed to be applied to the file input tag.
+  [INSERT LVATTRDOCS]
 
   ## Drag and Drop
 
   Drag and drop is supported by annotating the droppable container with a `phx-drop-target`
-  attribute pointing to the DOM `id` of the file input. By default, the file input `id` is the
-  upload `ref`, so the following markup is all that is required for drag and drop support:
+  attribute pointing to the UploadConfig `ref`, so the following markup is all that is required
+  for drag and drop support:
 
   ```heex
   <div class="container" phx-drop-target={@uploads.avatar.ref}>
@@ -2660,50 +2647,29 @@ defmodule Phoenix.Component do
 
   ## Examples
 
+  Rendering a file input:
+
   ```heex
+  <.live_file_input upload={@uploads.avatar} />
+  ```
+
+  Rendering a file input with a label:
+
+  ```heex
+  <label for={@uploads.avatar.ref}>Avatar</label>
   <.live_file_input upload={@uploads.avatar} />
   ```
   """
   @doc type: :component
-  def live_file_input(assigns)
 
-  def live_file_input(%Phoenix.LiveView.UploadConfig{} = conf) do
-    IO.warn(
-      "live_file_input(upload) is deprecated, please use <.live_file_input upload={upload} /> instead"
-    )
+  attr.(:upload, Phoenix.LiveView.UploadConfig,
+    required: true,
+    doc: "The `Phoenix.LiveView.UploadConfig` struct"
+  )
 
-    Phoenix.LiveView.Helpers.live_file_input(conf, [])
-  end
+  attr.(:rest, :global, [])
 
-  # TODO: Use attr when the backwards compatibility clause above is removed.
-  # attr :upload, Phoenix.LiveView.UploadConfig, required: true
-  # attr :rest, :global
-  def live_file_input(%{} = assigns) do
-    conf =
-      case assigns do
-        %{id: _} -> raise ArgumentError, "the :id cannot be overridden on a live_file_input"
-        %{upload: %Phoenix.LiveView.UploadConfig{} = conf} -> conf
-        %{} -> raise ArgumentError, "missing required :upload attribute to <.live_file_input/>"
-      end
-
-    rest = assigns_to_attributes(assigns, [:upload])
-
-    rest =
-      if conf.max_entries > 1 do
-        Keyword.put(rest, :multiple, true)
-      else
-        rest
-      end
-
-    assigns =
-      assign(assigns,
-        conf: conf,
-        rest: rest,
-        valid?: Enum.any?(conf.entries) && Enum.empty?(conf.errors),
-        done_entries: for(entry <- conf.entries, entry.done?, do: entry),
-        preflighted_entries: for(entry <- conf.entries, entry.preflighted?, do: entry)
-      )
-
+  def live_file_input(assigns) do
     ~H"""
     <input
       id={@upload.ref}
@@ -2712,18 +2678,25 @@ defmodule Phoenix.Component do
       accept={@upload.accept != :any && @upload.accept}
       data-phx-hook="Phoenix.LiveFileUpload"
       data-phx-update="ignore"
-      data-phx-upload-ref={@conf.ref}
-      data-phx-active-refs={Enum.map_join(@conf.entries, ",", & &1.ref)}
-      data-phx-done-refs={Enum.map_join(@done_entries, ",", & &1.ref)}
-      data-phx-preflighted-refs={Enum.map_join(@preflighted_entries, ",", & &1.ref)}
-      data-phx-auto-upload={@valid? && @conf.auto_upload?}
-      {@rest}
+      data-phx-upload-ref={@upload.ref}
+      data-phx-active-refs={join_refs(for(entry <- @upload.entries, do: entry.ref))}
+      data-phx-done-refs={join_refs(for(entry <- @upload.entries, entry.done?, do: entry.ref))}
+      data-phx-preflighted-refs={join_refs(for(entry <- @upload.entries, entry.preflighted?, do: entry.ref))}
+      data-phx-auto-upload={valid_upload?(@upload) and @upload.auto_upload?}
+      {if @upload.max_entries > 1, do: Map.put(@rest, :multiple, true), else: @rest}
     />
     """
   end
 
+  defp join_refs(entries), do: Enum.join(entries, ",")
+
+  defp valid_upload?(%{entries: [_ | _], errors: []}), do: true
+  defp valid_upload?(%{}), do: false
+
   @doc """
   Generates an image preview on the client for a selected file.
+
+  [INSERT LVATTRDOCS]
 
   ## Examples
 
@@ -2734,19 +2707,14 @@ defmodule Phoenix.Component do
   ```
   """
   @doc type: :component
-  def live_img_preview(assigns)
 
-  def live_img_preview(%Phoenix.LiveView.UploadEntry{} = entry) do
-    IO.warn("""
-    live_img_preview(entry) is deprecated, please use <.live_img_preview entry={entry} /> instead
-    """)
+  attr.(:entry, Phoenix.LiveView.UploadEntry,
+    required: true,
+    doc: "The `Phoenix.LiveView.UploadEntry` struct"
+  )
 
-    live_img_preview(%{entry: entry})
-  end
+  attr.(:rest, :global, [])
 
-  # TODO: Use attr when the backwards compatibility clause above is removed.
-  # attr :entry, Phoenix.LiveView.UploadEntry, required: true
-  # attr :rest, :global
   def live_img_preview(%{entry: %Phoenix.LiveView.UploadEntry{ref: ref} = entry} = assigns) do
     rest =
       assigns
