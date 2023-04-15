@@ -237,7 +237,7 @@ defmodule Phoenix.LiveView do
       end
 
   You can learn more about function components in the `Phoenix.Component`
-  module. At the end of the day, they are useful mechanism to reuse markup
+  module. At the end of the day, they are a useful mechanism to reuse markup
   in your LiveViews.
 
   However, sometimes you need to compartmentalize or reuse more than markup.
@@ -1632,7 +1632,7 @@ defmodule Phoenix.LiveView do
   def stream_configure(%Socket{} = socket, name, opts) when is_list(opts) do
     new_socket = ensure_streams(socket)
 
-    case socket.assigns.streams do
+    case new_socket.assigns.streams do
       %{^name => %LiveStream{}} ->
         raise ArgumentError, "cannot configure stream :#{name} after it has been streamed"
 
@@ -1712,7 +1712,7 @@ defmodule Phoenix.LiveView do
 
   ## Examples
 
-      def handle_event("delete", %{"id" => id})
+      def handle_event("delete", %{"id" => id}, socket) do
         song = get_song!(id)
         {:noreply, stream_delete(socket, :songs, song)}
       end
@@ -1749,7 +1749,7 @@ defmodule Phoenix.LiveView do
         """
       end
 
-      def handle_event("delete", %{"id" => dom_id})
+      def handle_event("delete", %{"id" => dom_id}, socket) do
         {:noreply, stream_delete_by_dom_id(socket, :songs, dom_id)}
       end
   '''
