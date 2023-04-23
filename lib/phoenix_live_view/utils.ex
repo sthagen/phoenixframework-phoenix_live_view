@@ -111,12 +111,14 @@ defmodule Phoenix.LiveView.Utils do
   """
   def clear_changed(%Socket{private: private, assigns: assigns} = socket) do
     temporary = Map.get(private, :temporary_assigns, %{})
+    %{socket | assigns: assigns |> Map.merge(temporary) |> Map.put(:__changed__, %{})}
+  end
 
-    %Socket{
-      socket
-      | assigns: assigns |> Map.merge(temporary) |> Map.put(:__changed__, %{}),
-        private: Map.put(private, :__changed__, %{})
-    }
+  @doc """
+  Clears temporary data (flash, pushes, etc) from the socket privates.
+  """
+  def clear_temp(socket) do
+    put_in(socket.private.__temp__, %{})
   end
 
   @doc """
@@ -186,6 +188,7 @@ defmodule Phoenix.LiveView.Utils do
   def post_mount_prune(%Socket{} = socket) do
     socket
     |> clear_changed()
+    |> clear_temp()
     |> drop_private([:connect_info, :connect_params, :assign_new])
   end
 
@@ -283,7 +286,7 @@ defmodule Phoenix.LiveView.Utils do
     new_flash = Map.delete(socket.assigns.flash, key)
 
     socket = assign(socket, :flash, new_flash)
-    update_in(socket.private.__changed__[:flash], &Map.delete(&1 || %{}, key))
+    update_in(socket.private.__temp__[:flash], &Map.delete(&1 || %{}, key))
   end
 
   @doc """
@@ -294,14 +297,14 @@ defmodule Phoenix.LiveView.Utils do
     new_flash = Map.put(assigns.flash, key, msg)
 
     socket = assign(socket, :flash, new_flash)
-    update_in(socket.private.__changed__[:flash], &Map.put(&1 || %{}, key, msg))
+    update_in(socket.private.__temp__[:flash], &Map.put(&1 || %{}, key, msg))
   end
 
   @doc """
   Returns a map of the flash messages which have changed.
   """
   def changed_flash(%Socket{} = socket) do
-    socket.private.__changed__[:flash] || %{}
+    socket.private.__temp__[:flash] || %{}
   end
 
   defp flash_key(binary) when is_binary(binary), do: binary
@@ -315,28 +318,28 @@ defmodule Phoenix.LiveView.Utils do
   redirects, the events won't be invoked.
   """
   def push_event(%Socket{} = socket, event, %{} = payload) do
-    update_in(socket.private.__changed__[:push_events], &[[event, payload] | &1 || []])
+    update_in(socket.private.__temp__[:push_events], &[[event, payload] | &1 || []])
   end
 
   @doc """
   Annotates the reply in the socket changes.
   """
   def put_reply(%Socket{} = socket, %{} = payload) do
-    put_in(socket.private.__changed__[:push_reply], payload)
+    put_in(socket.private.__temp__[:push_reply], payload)
   end
 
   @doc """
   Returns the push events in the socket.
   """
   def get_push_events(%Socket{} = socket) do
-    Enum.reverse(socket.private.__changed__[:push_events] || [])
+    Enum.reverse(socket.private.__temp__[:push_events] || [])
   end
 
   @doc """
   Returns the reply in the socket.
   """
   def get_reply(%Socket{} = socket) do
-    socket.private.__changed__[:push_reply]
+    socket.private.__temp__[:push_reply]
   end
 
   @doc """

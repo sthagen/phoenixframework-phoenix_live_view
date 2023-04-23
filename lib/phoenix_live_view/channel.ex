@@ -830,18 +830,20 @@ defmodule Phoenix.LiveView.Channel do
     {socket, diff, components} =
       if force? or Utils.changed?(socket) do
         rendered = Utils.to_rendered(socket, socket.view)
-        Diff.render(socket, rendered, state.components)
+        {socket, diff, components} = Diff.render(socket, rendered, state.components)
+
+        socket =
+          socket
+          |> Lifecycle.after_render()
+          |> Utils.clear_changed()
+
+        {socket, diff, components}
       else
         {socket, %{}, state.components}
       end
 
     diff = Diff.render_private(socket, diff)
-
-    new_socket =
-      socket
-      |> Lifecycle.after_render()
-      |> Utils.clear_changed()
-
+    new_socket = Utils.clear_temp(socket)
     {:diff, diff, %{state | socket: new_socket, components: components}}
   end
 
@@ -1042,6 +1044,7 @@ defmodule Phoenix.LiveView.Channel do
         rescue
           exception ->
             status = Plug.Exception.status(exception)
+
             if status >= 400 and status < 500 do
               GenServer.reply(from, {:error, %{reason: "reload", status: status}})
               {:stop, :shutdown, :no_state}
@@ -1107,7 +1110,7 @@ defmodule Phoenix.LiveView.Channel do
        assign_new: {%{}, assign_new},
        lifecycle: lifecycle,
        root_view: root_view,
-       __changed__: %{}
+       __temp__: %{}
      }}
   end
 
@@ -1123,7 +1126,7 @@ defmodule Phoenix.LiveView.Channel do
            live_layout: false,
            lifecycle: lifecycle,
            root_view: root_view,
-           __changed__: %{}
+           __temp__: %{}
          }}
 
       {:error, :noproc} ->
