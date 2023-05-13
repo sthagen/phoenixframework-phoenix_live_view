@@ -60,7 +60,9 @@ let DOM = {
 
   wantsNewTab(e){
     let wantsNewTab = e.ctrlKey || e.shiftKey || e.metaKey || (e.button && e.button === 1)
-    return wantsNewTab || e.target.getAttribute("target") === "_blank"
+    let isDownload = (e.target instanceof HTMLAnchorElement && e.target.hasAttribute("download"))
+    let isTargetBlank = e.target.getAttribute("target") === "_blank"
+    return wantsNewTab || isTargetBlank || isDownload
   },
 
   isUnloadableFormSubmit(e){
@@ -183,6 +185,7 @@ let DOM = {
   debounce(el, event, phxDebounce, defaultDebounce, phxThrottle, defaultThrottle, asyncFilter, callback){
     let debounce = el.getAttribute(phxDebounce)
     let throttle = el.getAttribute(phxThrottle)
+
     if(debounce === ""){ debounce = defaultDebounce }
     if(throttle === ""){ throttle = defaultThrottle }
     let value = debounce || throttle

@@ -873,12 +873,18 @@ defmodule Phoenix.LiveView do
 
       def handle_event("save", _params, socket) do
         uploaded_files =
-          consume_uploaded_entries(socket, :avatar, fn %{path: path}, _entry ->
-            dest = Path.join("priv/static/uploads", Path.basename(path))
+          consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
+            ext = "." <> get_entry_extension(entry)
+            dest = Path.join("priv/static/uploads", Path.basename(path <> ext))
             File.cp!(path, dest)
-            {:ok, Routes.static_path(socket, "/uploads/#{Path.basename(dest)}")}
+            {:ok, ~p"/uploads/#{Path.basename(dest)}"}
           end)
         {:noreply, update(socket, :uploaded_files, &(&1 ++ uploaded_files))}
+      end
+
+      defp get_entry_extension(entry) do
+        [ext | _] = MIME.extensions(entry.client_type)
+        ext
       end
   """
   defdelegate consume_uploaded_entries(socket, name, func), to: Phoenix.LiveView.Upload
@@ -906,9 +912,10 @@ defmodule Phoenix.LiveView do
           {[_|_] = entries, []} ->
             uploaded_files = for entry <- entries do
               consume_uploaded_entry(socket, entry, fn %{path: path} ->
-                dest = Path.join("priv/static/uploads", Path.basename(path))
+                ext = "." <> get_entry_extension(entry)
+                dest = Path.join("priv/static/uploads", Path.basename(path <> ext))
                 File.cp!(path, dest)
-                {:ok, Routes.static_path(socket, "/uploads/#{Path.basename(dest)}")}
+                {:ok, ~p"/uploads/#{Path.basename(dest)}"}
               end)
             end
             {:noreply, update(socket, :uploaded_files, &(&1 ++ uploaded_files))}
@@ -916,6 +923,11 @@ defmodule Phoenix.LiveView do
           _ ->
             {:noreply, socket}
         end
+      end
+
+      defp get_entry_extension(entry) do
+        [ext | _] = MIME.extensions(entry.client_type)
+        ext
       end
   """
   defdelegate consume_uploaded_entry(socket, entry, func), to: Phoenix.LiveView.Upload
@@ -1565,6 +1577,9 @@ defmodule Phoenix.LiveView do
        along with a unique DOM id.
     2. Each stream item must include its DOM id on the item's element.
 
+  > **Note**: Failing to place `phx-update="stream"` on the **immediate parent** for
+  > **each stream** will result in broken behavior.
+
   When consuming a stream in a template, the DOM id and item is passed as a tuple,
   allowing convenient inclusion of the DOM id for each item. For example:
 
@@ -1699,7 +1714,8 @@ defmodule Phoenix.LiveView do
   """
   def stream_insert(%Socket{} = socket, name, item, opts \\ []) do
     at = Keyword.get(opts, :at, -1)
-    update_stream(socket, name, &LiveStream.insert_item(&1, item, at))
+    limit = Keyword.get(opts, :limit)
+    update_stream(socket, name, &LiveStream.insert_item(&1, item, at, limit))
   end
 
   @doc """
