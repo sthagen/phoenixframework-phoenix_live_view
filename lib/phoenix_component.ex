@@ -1397,7 +1397,7 @@ defmodule Phoenix.Component do
   changesets. `:errors` a keyword of tuples in the shape
   of `{error_message, options_list}`. Here is an example:
 
-      to_form(%{"search" => nil}, errors: [search: [{"Can't be blank", []}]])
+      to_form(%{"search" => nil}, errors: [search: {"Can't be blank", []}])
 
   If an existing `Phoenix.HTML.Form` struct is given, the
   options above will override its existing values if given.
@@ -2678,7 +2678,7 @@ defmodule Phoenix.Component do
     doc: "The `Phoenix.LiveView.UploadConfig` struct"
   )
 
-  attr.(:rest, :global, [])
+  attr.(:rest, :global, include: ~w(webkitdirectory))
 
   def live_file_input(assigns) do
     ~H"""
@@ -2767,10 +2767,13 @@ defmodule Phoenix.Component do
 
   def intersperse(assigns) do
     ~H"""
-    <%= for item <- Enum.intersperse(@enum, :separator) do
-    %><%= if item == :separator do %><%= render_slot(@separator)
-    %><% else
-    %><%= render_slot(@inner_block, item)%><% end %><% end %>
+    <%= for item <- Enum.intersperse(@enum, :separator) do %><%=
+      if item == :separator do
+        render_slot(@separator)
+      else
+        render_slot(@inner_block, item)
+      end
+    %><% end %>
     """
   end
 end
