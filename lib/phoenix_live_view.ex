@@ -1,7 +1,7 @@
 defmodule Phoenix.LiveView do
   @moduledoc ~S'''
-  LiveView provides rich, real-time user experiences with
-  server-rendered HTML.
+  A LiveView is a process that receives events, updates
+  its state, and render updates to a page as diffs.
 
   The LiveView programming model is declarative: instead of
   saying "once event X happens, change Y on the page",
@@ -14,8 +14,7 @@ defmodule Phoenix.LiveView do
   work of tracking changes and sending the relevant diffs to
   the browser.
 
-  A LiveView is just a process that receives events as messages and updates
-  its state. The state itself is nothing more than functional and immutable
+  LiveView state is nothing more than functional and immutable
   Elixir data structures. The events are either internal application messages
   (usually emitted by `Phoenix.PubSub`) or sent by the client/browser.
 
@@ -26,8 +25,7 @@ defmodule Phoenix.LiveView do
   server. This allows LiveView applications to react faster to user
   events as there is less work to be done and less data to be sent
   compared to stateless requests that have to authenticate, decode, load,
-  and encode data on every request. The flipside is that LiveView
-  uses more memory on the server compared to stateless requests.
+  and encode data on every request.
 
   ## Life-cycle
 
@@ -70,17 +68,11 @@ defmodule Phoenix.LiveView do
 
   ## Example
 
-  Before writing your first example, make sure that Phoenix LiveView
-  is properly installed. All applications generated with Phoenix v1.6
-  and later come with LiveView installed and configured. For previously
-  existing projects, please follow the steps in the
-  [installation guide](installation.md) before continuing.
-
-  A LiveView is a simple module that requires two callbacks: `c:mount/3`
-  and `c:render/1`:
+  A LiveView is a module that requires two callbacks: `c:mount/3` and
+  `c:render/1`:
 
       defmodule MyAppWeb.ThermostatLive do
-        # In Phoenix v1.6+ apps, the line below should be: use MyAppWeb, :live_view
+        # In Phoenix v1.6+ apps, the line is typically: use MyAppWeb, :live_view
         use Phoenix.LiveView
 
         def render(assigns) do
@@ -1549,6 +1541,18 @@ defmodule Phoenix.LiveView do
     * `:reset` - the boolean to reset the stream on the client or not. Defaults
       to `false`.
 
+    * `:limit` - the optional positive or negative number of results to limit
+      on the UI on the client. As new items are streamed, the UI will remove existing
+      items to maintain the limit. For example, to limit the stream to the last 10 items
+      in the UI while appending new items, pass a negative value:
+
+          stream(socket, :posts, posts, at: -1, limit: -10)
+
+      Likewise, to limit the stream to the first 10 items, while prepending new items,
+      pass a positive value:
+
+          stream(socket, :posts, posts, at: 0, limit: 10)
+
   Once a stream is defined, a new `@streams` assign is available containing
   the name of the defined streams. For example, in the above definition, the
   stream may be referenced as `@streams.songs` in your template. Stream items
@@ -1567,6 +1571,18 @@ defmodule Phoenix.LiveView do
   Or you can replace the entire stream on the client with a new collection:
 
           stream(socket, :songs, new_songs, reset: true)
+
+  ## Limiting a stream
+
+  It is often useful to limit the number of items in the UI while allowing the
+  server to stream new items in a fire-and-forget fashion. This prevents
+  the server from overwhelming the client with new results while also opening up
+  powerful features like virtualized infinite scrolling. See a complete
+  bidirectional infinite scrolling example with stream limits in the
+  [scroll events guide](bindings.md##scroll-events-and-infinite-stream-pagination)
+
+  When a stream exceeds the limit on the client, the existing items will be removed
+  based on the
 
   ## Required DOM attributes
 
