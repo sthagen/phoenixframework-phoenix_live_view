@@ -5,6 +5,11 @@ defmodule Phoenix.LiveViewTest.StreamLive do
     GenServer.call(lv.pid, {:run, func})
   end
 
+  def render(%{invalid_consume: true} = assigns) do
+    ~H"""
+    <div :for={{id, _user} <- Enum.map(@streams.users, &(&1))} id={id} />
+    """
+  end
   def render(assigns) do
     ~H"""
     <div id="users" phx-update="stream">
@@ -33,6 +38,7 @@ defmodule Phoenix.LiveViewTest.StreamLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
+     |> assign(:invalid_consume, false)
      |> stream(:users, [user(1, "chris"), user(2, "callan")])
      |> stream(:admins, [user(1, "chris-admin"), user(2, "callan-admin")])}
   end
@@ -87,6 +93,10 @@ defmodule Phoenix.LiveViewTest.StreamLive do
      socket
      |> stream_delete_by_dom_id(:admins, dom_id)
      |> stream_insert(:admins, user, at: -1)}
+  end
+
+  def handle_event("consume-stream-invalid", _, socket) do
+    {:noreply, assign(socket, :invalid_consume, true)}
   end
 
   def handle_call({:run, func}, _, socket), do: func.(socket)
@@ -158,5 +168,61 @@ defmodule Phoenix.LiveViewTest.StreamComponent do
 
   defp user(id, name) do
     %{id: id, name: name}
+  end
+end
+
+defmodule Phoenix.LiveViewTest.HealthyLive do
+  use Phoenix.LiveView
+
+  @healthy_stuff %{
+    "fruits" => [
+      %{id: 1, name: "Apples"},
+      %{id: 2, name: "Oranges"}
+    ],
+    "veggies" => [
+      %{id: 3, name: "Carrots"},
+      %{id: 4, name: "Tomatoes"}
+    ]
+  }
+
+  def render(assigns) do
+    ~H"""
+    <p>
+      <.link patch={other(@category)}>Switch</.link>
+    </p>
+
+    <h1><%= String.capitalize(@category) %></h1>
+
+    <ul id="items" phx-update="stream">
+      <li :for={{dom_id, item} <- @streams.items} id={dom_id}>
+        <%= item.name %>
+      </li>
+    </ul>
+    """
+  end
+
+  defp other("fruits" = _current_category) do
+    "/healthy/veggies"
+  end
+
+  defp other("veggies" = _current_category) do
+    "/healthy/fruits"
+  end
+
+  def mount(%{"category" => category} = _params, _session, socket) do
+    socket =
+      socket
+      |> assign(:category, category)
+
+    {:ok, socket}
+  end
+
+  def handle_params(%{"category" => category} = _params, _url, socket) do
+    socket =
+      socket
+      |> assign(:category, category)
+      |> stream(:items, Map.fetch!(@healthy_stuff, category), reset: true)
+
+    {:noreply, socket}
   end
 end

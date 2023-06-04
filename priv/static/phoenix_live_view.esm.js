@@ -1779,11 +1779,17 @@ var DOMPatch = class {
             parent.insertBefore(child, sibling);
           }
           let children = limit !== null && Array.from(parent.children);
+          let childrenToRemove = [];
           if (limit && limit < 0 && children.length > limit * -1) {
-            children.slice(0, children.length + limit).forEach((child2) => this.removeStreamChildElement(child2));
+            childrenToRemove = children.slice(0, children.length + limit);
           } else if (limit && limit >= 0 && children.length > limit) {
-            children.slice(limit).forEach((child2) => this.removeStreamChildElement(child2));
+            childrenToRemove = children.slice(limit);
           }
+          childrenToRemove.forEach((removeChild) => {
+            if (!this.streamInserts[removeChild.id]) {
+              this.removeStreamChildElement(removeChild);
+            }
+          });
         },
         onBeforeNodeAdded: (el) => {
           dom_default.maybeAddPrivateHooks(el, phxViewportTop, phxViewportBottom);
@@ -1802,7 +1808,7 @@ var DOMPatch = class {
           if (dom_default.isNowTriggerFormExternal(el, phxTriggerExternal)) {
             externalFormTriggered = el;
           }
-          if (el.getAttribute && el.getAttribute("name")) {
+          if (el.getAttribute && el.getAttribute("name") && dom_default.isFormInput(el)) {
             trackedInputs.push(el);
           }
           if (dom_default.isPhxChild(el) && view.ownsElement(el) || dom_default.isPhxSticky(el) && view.ownsElement(el.parentNode)) {
@@ -1886,7 +1892,7 @@ var DOMPatch = class {
             dom_default.maybeAddPrivateHooks(toEl, phxViewportTop, phxViewportBottom);
             dom_default.syncAttrsToProps(toEl);
             dom_default.applyStickyOperations(toEl);
-            if (toEl.getAttribute("name")) {
+            if (toEl.getAttribute("name") && dom_default.isFormInput(toEl)) {
               trackedInputs.push(toEl);
             }
             this.trackBefore("updated", fromEl, toEl);

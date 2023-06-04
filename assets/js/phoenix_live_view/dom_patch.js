@@ -143,11 +143,18 @@ export default class DOMPatch {
             parent.insertBefore(child, sibling)
           }
           let children = limit !== null && Array.from(parent.children)
+          let childrenToRemove = []
           if(limit && limit < 0 && children.length > limit * -1){
-            children.slice(0, children.length + limit).forEach(child => this.removeStreamChildElement(child))
+            childrenToRemove = children.slice(0, children.length + limit)
           } else if(limit && limit >= 0 && children.length > limit){
-            children.slice(limit).forEach(child => this.removeStreamChildElement(child))
+            childrenToRemove = children.slice(limit)
           }
+          childrenToRemove.forEach(removeChild => {
+            // do not remove child as part of limit if we are re-adding it
+            if(!this.streamInserts[removeChild.id]){
+              this.removeStreamChildElement(removeChild)
+            }
+          })
         },
         onBeforeNodeAdded: (el) => {
           DOM.maybeAddPrivateHooks(el, phxViewportTop, phxViewportBottom)
@@ -167,7 +174,7 @@ export default class DOMPatch {
             externalFormTriggered = el
           }
 
-          if(el.getAttribute && el.getAttribute("name")){
+          if(el.getAttribute && el.getAttribute("name") && DOM.isFormInput(el)){
             trackedInputs.push(el)
           }
           // nested view handling
@@ -246,7 +253,7 @@ export default class DOMPatch {
             DOM.maybeAddPrivateHooks(toEl, phxViewportTop, phxViewportBottom)
             DOM.syncAttrsToProps(toEl)
             DOM.applyStickyOperations(toEl)
-            if(toEl.getAttribute("name")){
+            if(toEl.getAttribute("name") && DOM.isFormInput(toEl)){
               trackedInputs.push(toEl)
             }
             this.trackBefore("updated", fromEl, toEl)

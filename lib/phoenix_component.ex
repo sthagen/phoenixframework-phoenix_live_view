@@ -1005,25 +1005,8 @@ defmodule Phoenix.Component do
 
   def live_flash(%{} = flash, key), do: Map.get(flash, to_string(key))
 
-  @doc """
-  Returns the entry errors for an upload.
-
-  The following error may be returned:
-
-  * `:too_many_files` - The number of selected files exceeds the `:max_entries` constraint
-
-  ## Examples
-
-      def error_to_string(:too_many_files), do: "You have selected too many files"
-
-  ```heex
-  <%= for err <- upload_errors(@uploads.avatar) do %>
-    <div class="alert alert-danger">
-      <%= error_to_string(err) %>
-    </div>
-  <% end %>
-  ```
-  """
+  @doc false
+  @deprecated "Use upload_errors/2 instead (this function has no effect and always returns an empty list)"
   def upload_errors(%Phoenix.LiveView.UploadConfig{} = conf) do
     for {ref, error} <- conf.errors, ref == conf.ref, do: error
   end
@@ -1035,17 +1018,23 @@ defmodule Phoenix.Component do
 
   * `:too_large` - The entry exceeds the `:max_file_size` constraint
   * `:not_accepted` - The entry does not match the `:accept` MIME types
+  * `:too_many_files` - The entry exceeds the `:max_entries` constraint
+  * `:external_client_failure` - When external upload fails
 
   ## Examples
 
-      def error_to_string(:too_large), do: "Too large"
-      def error_to_string(:not_accepted), do: "You have selected an unacceptable file type"
+  ```elixir
+  defp upload_error_to_string(:too_large), do: "The file is too large"
+  defp upload_error_to_string(:too_many_files), do: "You have selected too many files"
+  defp upload_error_to_string(:not_accepted), do: "You have selected an unacceptable file type"
+  defp upload_error_to_string(:external_client_failure), do: "Something went terribly wrong"
+  ```
 
   ```heex
   <%= for entry <- @uploads.avatar.entries do %>
     <%= for err <- upload_errors(@uploads.avatar, entry) do %>
       <div class="alert alert-danger">
-        <%= error_to_string(err) %>
+        <%= upload_error_to_string(err) %>
       </div>
     <% end %>
   <% end %>
@@ -1287,8 +1276,8 @@ defmodule Phoenix.Component do
       iex> update(socket, :count, fn count -> count + 1 end)
       iex> update(socket, :count, &(&1 + 1))
       iex> update(socket, :max_users_this_session, fn current_max, %{users: users} ->
-             max(current_max, length(users))
-           end)
+      ...>   max(current_max, length(users))
+      ...> end)
   """
   def update(socket_or_assigns, key, fun)
 
@@ -2224,6 +2213,82 @@ defmodule Phoenix.Component do
     </.inputs_for>
   </.form>
   ```
+
+  ## Dynamically adding and removing inputs
+
+  Dynamicaly adding and removing inputs is supported by rendering
+  checkboxes for inserts and removals. Libraries such as Ecto, or custom param
+  filtering can then inspect the paramters and handle the added or removed fields.
+  This can be combined with `Ecto.Changeset.cast/3`'s `:sort_param` and `:drop_param`
+  options. For example, imagine a parent with an `:emails` `has_many` or `embeds_many`
+  association. To cast the user input from a nested form, one simply needs to configure
+  the options:
+
+      schema "lists" do
+        field :title, :string
+
+        embeds_many :emails, EmailNotification, on_replace: :delete do
+          field :email, :string
+          field :name, :string
+        end
+      end
+
+      def changeset(list, attrs) do
+        list
+        |> cast(attrs, [:title])
+        |> cast_embed(:emails,
+          with: &email_changeset/2,
+          sort_param: :emails_sort,
+          drop_param: :emails_drop
+        )
+      end
+
+  Here we see the `:sort_param` and `:drop_param` options in action.
+
+  *Note: `on_replace: :delete` on the `has_many` and `embeds_many` is required when using
+  these options.
+
+  When Ecto sees the specified sort or drop parameter from the form, it will sort
+  the children based on the order they appear in the form, add new children it hasn't
+  seen, or drop children if the parameter intructs it to do so.
+
+  The markup for such a schema and association would look like this:
+
+  ```heex
+  <.inputs_for :let={ef} field={@form[:emails]}>
+    <input type="hidden" name="list[emails_sort][]" value={ef.index} />
+    <.input type="text" field={ef[:email]} placeholder="email" />
+    <.input type="text" field={ef[:name]} placeholder="name" />
+    <label>
+      <input type="checkbox" name="list[emails_drop][]" value={ef.index} class="hidden" />
+      <.icon name="hero-x-mark" class="w-6 h-6 relative top-2" />
+    </label>
+  </.inputs_for>
+
+  <label class="block cursor-pointer">
+    <input type="checkbox" name="list[emails_sort][]" class="hidden" />
+    add more
+  </label>
+
+  <input type="hidden" name="list[emails_drop][]" />
+  ```
+
+  We used `inputs_for` to render inputs for the `:emails` association, which
+  containes an email address and name input for each child. Within the nested inputs,
+  we render a hidden `list[emails_sort][]` input, which is set to the index of the
+  given child. This tells Ecto's cast operation how to sort existing children, or
+  where to insert new children. Next, we render the email and name inputs as usual.
+  Then we render a label containing the "delete" text and a hidden checkbox input
+  with the name `list[emails_drop][]`, containing the index of the child as its value.
+  Like before, this tells Ecto to delete the child at this index when the checkbox is
+  checked. Wrapping the checkbox and textual content in a label makes any clicked content
+  within the label check and uncheck the checbox.
+
+  Finally, outside the `inputs_for`, we render another label with a value-less
+  `list[emails_sort][]` checkbox witih accompanied "add more" text. Ecto will
+  treat unknown sort params as new children and build a new child. We also render an
+  empty `list[emails_drop][]` to ensure that all children are deleted when saving our
+  form in the event that the user dropped all the inputs.
   """
   @doc type: :component
   attr.(:field, Phoenix.HTML.FormField,
