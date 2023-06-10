@@ -318,17 +318,21 @@ var DOM = {
   isUnloadableFormSubmit(e) {
     return !e.defaultPrevented && !this.wantsNewTab(e);
   },
-  isNewPageHref(href, currentLocation) {
+  isNewPageClick(e, currentLocation) {
+    let href = e.target instanceof HTMLAnchorElement ? e.target.getAttribute("href") : null;
+    let url;
+    if (e.defaultPrevented || href === null || this.wantsNewTab(e)) {
+      return false;
+    }
     if (href.startsWith("mailto:") || href.startsWith("tel:")) {
       return false;
     }
-    let url;
     try {
       url = new URL(href);
-    } catch (e) {
+    } catch (e2) {
       try {
         url = new URL(href, currentLocation);
-      } catch (e2) {
+      } catch (e3) {
         return true;
       }
     }
@@ -337,7 +341,7 @@ var DOM = {
         return url.hash === "" && !url.href.endsWith("#");
       }
     }
-    return true;
+    return url.protocol.startsWith("http");
   },
   markPhxChildDestroyed(el) {
     if (this.isPhxChild(el)) {
@@ -4159,8 +4163,7 @@ var LiveSocket = class {
       }
       let phxEvent = target && target.getAttribute(click);
       if (!phxEvent) {
-        let href = e.target instanceof HTMLAnchorElement ? e.target.getAttribute("href") : null;
-        if (!capture && href !== null && !dom_default.wantsNewTab(e) && dom_default.isNewPageHref(href, window.location)) {
+        if (!capture && dom_default.isNewPageClick(e, window.location)) {
           this.unload();
         }
         return;

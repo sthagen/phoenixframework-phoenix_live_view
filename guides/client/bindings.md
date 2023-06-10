@@ -20,7 +20,7 @@ callback, for example:
 | [Form Events](form-bindings.md) | `phx-change`, `phx-submit`, `phx-feedback-for`, `phx-disable-with`, `phx-trigger-action`, `phx-auto-recover` |
 | [Focus Events](#focus-and-blur-events) | `phx-blur`, `phx-focus`, `phx-window-blur`, `phx-window-focus` |
 | [Key Events](#key-events) | `phx-keydown`, `phx-keyup`, `phx-window-keydown`, `phx-window-keyup`, `phx-key` |
-| [Scroll Events](#scroll-events-and-infinite-stream-pagination) | `phx-viewport-top`, `phx-viewport-bottom`
+| [Scroll Events](#scroll-events-and-infinite-stream-pagination) | `phx-viewport-top`, `phx-viewport-bottom` |
 | [DOM Patching](dom-patching.md) | `phx-mounted`, `phx-update`, `phx-remove` |
 | [JS Interop](js-interop.md#client-hooks) | `phx-hook` |
 | [Lifecycle Events](#lifecycle-events) | `phx-mounted`, `phx-disconnected`, `phx-connected` |
@@ -190,7 +190,7 @@ Generally, applications will add padding above and below a container when perfor
         [_ | _] = posts ->
           socket
           |> assign(end_of_timeline?: false)   socket
-          |> assign(page: if(posts == [], do: cur_page, else: new_page))
+          |> assign(:page, new_page)
           |> stream(:posts, posts, at: at, limit: limit)
       end
     end

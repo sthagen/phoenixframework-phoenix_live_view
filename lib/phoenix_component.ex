@@ -253,7 +253,7 @@ defmodule Phoenix.Component do
       use Phoenix.Component, global_prefixes: ~w(x-)
 
   In your Phoenix application, this is typically done in your
-  `lib/my_app.ex` file, inside the `def html` definition:
+  `lib/my_app_web.ex` file, inside the `def html` definition:
 
       def html do
         quote do
@@ -1006,7 +1006,7 @@ defmodule Phoenix.Component do
   def live_flash(%{} = flash, key), do: Map.get(flash, to_string(key))
 
   @doc false
-  @deprecated "Use upload_errors/2 instead (this function has no effect and always returns an empty list)"
+  @deprecated "Check on the schema or on params if there are too many uploads"
   def upload_errors(%Phoenix.LiveView.UploadConfig{} = conf) do
     for {ref, error} <- conf.errors, ref == conf.ref, do: error
   end
@@ -1018,14 +1018,12 @@ defmodule Phoenix.Component do
 
   * `:too_large` - The entry exceeds the `:max_file_size` constraint
   * `:not_accepted` - The entry does not match the `:accept` MIME types
-  * `:too_many_files` - The entry exceeds the `:max_entries` constraint
   * `:external_client_failure` - When external upload fails
 
   ## Examples
 
   ```elixir
   defp upload_error_to_string(:too_large), do: "The file is too large"
-  defp upload_error_to_string(:too_many_files), do: "You have selected too many files"
   defp upload_error_to_string(:not_accepted), do: "You have selected an unacceptable file type"
   defp upload_error_to_string(:external_client_failure), do: "Something went terribly wrong"
   ```
@@ -2748,15 +2746,22 @@ defmodule Phoenix.Component do
     doc: "The `Phoenix.LiveView.UploadConfig` struct"
   )
 
-  attr.(:rest, :global, include: ~w(webkitdirectory))
+  attr.(:accept, :string,
+    doc:
+      "the optional override for the accept attribute. Defaults to :accept specified by allow_upload"
+  )
 
-  def live_file_input(assigns) do
+  attr.(:rest, :global, include: ~w(webkitdirectory required disabled))
+
+  def live_file_input(%{upload: upload} = assigns) do
+    assigns = assign_new(assigns, :accept, fn -> upload.accept != :any && upload.accept end)
+
     ~H"""
     <input
       id={@upload.ref}
       type="file"
       name={@upload.name}
-      accept={@upload.accept != :any && @upload.accept}
+      accept={@accept}
       data-phx-hook="Phoenix.LiveFileUpload"
       data-phx-update="ignore"
       data-phx-upload-ref={@upload.ref}
