@@ -1143,7 +1143,7 @@ defmodule Phoenix.LiveViewTest do
   defmacro file_input(view, form_selector, name, entries) do
     quote bind_quoted: [view: view, selector: form_selector, name: name, entries: entries] do
       require Phoenix.ChannelTest
-      builder = fn -> Phoenix.ChannelTest.connect(Phoenix.LiveView.Socket, %{}, %{}) end
+      builder = fn -> Phoenix.ChannelTest.connect(Phoenix.LiveView.Socket, %{}) end
       Phoenix.LiveViewTest.__file_input__(view, selector, name, entries, builder)
     end
   end
@@ -1492,14 +1492,23 @@ defmodule Phoenix.LiveViewTest do
   end
 
   defp open_with_system_cmd(path) do
-    cmd =
+    {cmd, args} =
       case :os.type() do
-        {:unix, :darwin} -> "open"
-        {:unix, _} -> "xdg-open"
-        {:win32, _} -> "start"
+        {:win32, _} ->
+          {"cmd", ["/c", "start", path]}
+
+        {:unix, :darwin} ->
+          {"open", [path]}
+
+        {:unix, _} ->
+          if System.find_executable("cmd.exe") do
+            {"cmd.exe", ["/c", "start", path]}
+          else
+            {"xdg-open", [path]}
+          end
       end
 
-    System.cmd(cmd, [path])
+    System.cmd(cmd, args)
   end
 
   @doc """
