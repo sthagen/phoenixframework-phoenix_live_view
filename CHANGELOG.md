@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.5
+
+### Enhancements
+  * Dispatch `phx:navigate` window events when LiveView changes the history state
+
+### Bug fixes
+  * Fix JS.patch to a Phoenix router scope with `:host` causing errors
+
+## 0.19.4 (2023-07-10)
+
+### Enhancements
+  * Introduce `Phoenix.LiveView.UploadWriter`
+
 ## 0.19.3 (2023-06-21)
 
 ### Bug fixes

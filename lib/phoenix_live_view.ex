@@ -780,6 +780,10 @@ defmodule Phoenix.LiveView do
     * `:auto_upload` - Instructs the client to upload the file automatically
       on file selection instead of waiting for form submits. Default false.
 
+    * `:writer` - The `Phoenix.LiveView.UploadWriter` module to use for writing
+      the uploaded chunks. Defaults to writing to a temporary file for consumption.
+      See the `Phoenix.LiveView.UploadWriter` docs for custom usage.
+
   Raises when a previously allowed upload under the same name is still active.
 
   ## Examples
@@ -1511,14 +1515,14 @@ defmodule Phoenix.LiveView do
   defdelegate detach_hook(socket, name, stage), to: Phoenix.LiveView.Lifecycle
 
   @doc ~S"""
-  Assigns a new stream to the socket.
+  Assigns a new stream to the socket or inserts items into an existing stream.
 
   Streams are a mechanism for managing large collections on the client without
   keeping the resources on the server.
 
     * `name` - The string or atom name of the key to place under the
       `@streams` assign.
-    * `items` - The enumerable of items for initial insert
+    * `items` - The enumerable of items to insert.
 
   The following options are supported:
 
@@ -1569,8 +1573,10 @@ defmodule Phoenix.LiveView do
   bidirectional infinite scrolling example with stream limits in the
   [scroll events guide](bindings.md#scroll-events-and-infinite-stream-pagination)
 
-  When a stream exceeds the limit on the client, the existing items will be removed
-  based on the
+  When a stream exceeds the limit on the client, the existing items will be pruned
+  based on the number of items in the stream container and the limit direction. A
+  positive limit will prune items from the end of the container, while a negative
+  limit will prune items from the beginning of the container.
 
   ## Required DOM attributes
 
