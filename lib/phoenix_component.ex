@@ -7,6 +7,7 @@ defmodule Phoenix.Component do
   [the `~H` sigil](`sigil_H/2`):
 
       defmodule MyComponent do
+        # In Phoenix apps, the line is typically: use MyAppWeb, :html
         use Phoenix.Component
 
         def greet(assigns) do
@@ -135,6 +136,7 @@ defmodule Phoenix.Component do
   `<Component.heading>` requires a `title`, but *does not* require a `name`.
 
       defmodule Components do
+        # In Phoenix apps, the line is typically: use MyAppWeb, :html
         use Phoenix.Component
 
         attr :title, :string, required: true
@@ -1037,6 +1039,7 @@ defmodule Phoenix.Component do
   * `:too_large` - The entry exceeds the `:max_file_size` constraint
   * `:not_accepted` - The entry does not match the `:accept` MIME types
   * `:external_client_failure` - When external upload fails
+  * `{:writer_failure, reason}` - When the custom writer fails with `reason`
 
   ## Examples
 
@@ -1384,14 +1387,14 @@ defmodule Phoenix.Component do
         end
       end
 
-  And then you create a changeset which you pass to `to_form`:
+  And then you create a changeset that you pass to `to_form`:
 
-      %MyApp.Blog.Post{}
+      %MyApp.Users.User{}
       |> Ecto.Changeset.change()
       |> to_form()
 
   In this case, once the form is submitted, the parameters will
-  be available under `%{"post" => post_params}`.
+  be available under `%{"user" => user_params}`.
 
   ## Options
 

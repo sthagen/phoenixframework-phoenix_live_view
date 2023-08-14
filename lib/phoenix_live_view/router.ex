@@ -17,6 +17,11 @@ defmodule Phoenix.LiveView.Router do
 
       live_path(@socket, ThermostatLive)
 
+  > #### HTTP requests {: .info}
+  >
+  > The HTTP request method that a route defined by the `live/4` macro
+  > responds to is `GET`.
+
   ## Actions and live navigation
 
   It is common for a LiveView to have multiple states and multiple URLs.
@@ -286,7 +291,7 @@ defmodule Phoenix.LiveView.Router do
         raise ArgumentError, """
         invalid live_session :root_layout
 
-        expected a tuple with the view module and template string or atom name, got #{inspect(bad_layout)}
+        expected a tuple with the view module and template atom name, got #{inspect(bad_layout)}
         """
 
       {:layout, {mod, template}}, acc when is_atom(mod) and is_binary(template) ->

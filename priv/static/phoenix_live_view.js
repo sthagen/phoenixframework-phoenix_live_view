@@ -1796,7 +1796,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           });
           if (reset !== void 0) {
             dom_default.all(container, `[${PHX_STREAM_REF}="${ref}"]`, (child) => {
-              this.removeStreamChildElement(child);
+              if (!inserts[child.id]) {
+                this.removeStreamChildElement(child);
+              }
             });
           }
           deleteIds.forEach((id) => {
@@ -2237,6 +2239,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       }
       if (stream !== void 0 && (rendered[DYNAMICS].length > 0 || deleteIds.length > 0 || reset)) {
         delete rendered[STREAM];
+        rendered[DYNAMICS] = [];
         output.streams.add(stream);
       }
     }
@@ -3586,7 +3589,7 @@ within:
         if (inputs.length === 0) {
           return;
         }
-        let input = inputs.find((el) => el.type !== "hidden") || input[0];
+        let input = inputs.find((el) => el.type !== "hidden") || inputs[0];
         let phxEvent = form.getAttribute(this.binding(PHX_AUTO_RECOVER)) || form.getAttribute(this.binding("change"));
         js_default.exec("change", phxEvent, view, input, ["push", { _target: input.name, newCid, callback }]);
       });

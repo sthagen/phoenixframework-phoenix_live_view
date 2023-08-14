@@ -13,8 +13,7 @@ defmodule Phoenix.LiveComponent do
   The smallest LiveComponent only needs to define a `c:render/1` function:
 
       defmodule HeroComponent do
-        # If you generated an app with mix phx.new --live,
-        # the line below would be: use MyAppWeb, :live_component
+        # In Phoenix apps, the line is typically: use MyAppWeb, :live_component
         use Phoenix.LiveComponent
 
         def render(assigns) do
@@ -32,6 +31,13 @@ defmodule Phoenix.LiveComponent do
   available as an assign and it must be used to uniquely identify the
   component. All other attributes will be available as assigns inside the
   LiveComponent.
+
+  > #### Functional components or live components? {: .neutral}
+  >
+  > Generally speaking, you should prefer functional components over live
+  > components, as they are a simpler abstraction, with a smaller surface
+  > area. The use case for live components only arises when there is a need
+  > for encapsulating both event handling and additional state.
 
   ## Life-cycle
 
@@ -65,6 +71,7 @@ defmodule Phoenix.LiveComponent do
   a DOM ID, it is your responsibility to do so when rendering:
 
       defmodule UserComponent do
+        # In Phoenix apps, the line is typically: use MyAppWeb, :live_component
         use Phoenix.LiveComponent
 
         def render(assigns) do
