@@ -468,8 +468,7 @@ defmodule Phoenix.LiveViewTest do
   def __render_component__(endpoint, %{module: component}, assigns, opts) do
     socket = %Socket{endpoint: endpoint, router: opts[:router]}
 
-    assigns =
-      Map.new(assigns)
+    assigns = Map.new(assigns)
 
     # TODO: Make the ID required once we support only stateful module components as live_component
     mount_assigns = if assigns[:id], do: %{myself: %Phoenix.LiveComponent.CID{cid: -1}}, else: %{}
@@ -923,6 +922,54 @@ defmodule Phoenix.LiveViewTest do
   end
 
   @doc """
+  Awaits all current `assign_async` and `start_async` for a given LiveView or element.
+
+  It renders the LiveView or Element once complete and returns the result.
+  By default, the timeout is 100ms, but a custom time may be passed to override.
+
+  ## Examples
+
+      {:ok, lv, html} = live(conn, "/path")
+      assert html =~ "loading data..."
+      assert render_async(lv) =~ "data loaded!"
+  """
+  def render_async(
+        view_or_element,
+        timeout \\ Application.fetch_env!(:ex_unit, :assert_receive_timeout)
+      ) do
+    pids =
+      case view_or_element do
+        %View{} = view -> call(view, {:async_pids, {proxy_topic(view), nil, nil}})
+        %Element{} = element -> call(element, {:async_pids, element})
+      end
+
+    timeout_ref = make_ref()
+    Process.send_after(self(), {timeout_ref, :timeout}, timeout)
+
+    pids
+    |> Enum.map(&Process.monitor(&1))
+    |> Enum.each(fn ref ->
+      receive do
+        {^timeout_ref, :timeout} ->
+          raise RuntimeError, "expected async processes to finish within #{timeout}ms"
+
+        {:DOWN, ^ref, :process, _pid, _reason} ->
+          :ok
+      end
+    end)
+
+    unless Process.cancel_timer(timeout_ref) do
+      receive do
+        {^timeout_ref, :timeout} -> :noop
+      after
+        0 -> :noop
+      end
+    end
+
+    render(view_or_element)
+  end
+
+  @doc """
   Simulates a `live_patch` to the given `path` and returns the rendered result.
   """
   def render_patch(%View{} = view, path) when is_binary(path) do
@@ -1075,7 +1122,7 @@ defmodule Phoenix.LiveViewTest do
   a single element.
 
       assert view
-            |> element("#term a:first-child", "Increment")
+            |> element("#term > :first-child", "Increment")
             |> render() =~ "Increment</a>"
 
   Attribute selectors are also supported, and may be used on special cases
@@ -1408,7 +1455,7 @@ defmodule Phoenix.LiveViewTest do
   ## Examples
 
       view
-      |> element("#term a:first-child", "Increment")
+      |> element("#term > :first-child", "Increment")
       |> open_browser()
 
       assert view
