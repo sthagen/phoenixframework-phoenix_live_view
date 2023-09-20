@@ -1081,7 +1081,7 @@ defmodule Phoenix.Component do
   Imagine you have a function component that accepts a color:
 
   ```heex
-  <.my_component color="red" />
+  <.my_component bg_color="red" />
   ```
 
   The color is also optional, so you can skip it:
@@ -2805,7 +2805,7 @@ defmodule Phoenix.Component do
 
   defp join_refs(entries), do: Enum.join(entries, ",")
 
-  @doc """
+  @doc ~S"""
   Generates an image preview on the client for a selected file.
 
   [INSERT LVATTRDOCS]
@@ -2817,6 +2817,18 @@ defmodule Phoenix.Component do
     <.live_img_preview entry={entry} width="75" />
   <% end %>
   ```
+
+  When you need to use it multiple times, make sure that they have distinct ids
+
+  ```heex
+  <%= for entry <- @uploads.avatar.entries do %>
+    <.live_img_preview entry={entry} width="75" />
+  <% end %>
+
+  <%= for entry <- @uploads.avatar.entries do %>
+    <.live_img_preview id={"modal-#{entry.ref}"} entry={entry} width="500" />
+  <% end %>
+  ```
   """
   @doc type: :component
 
@@ -2825,12 +2837,18 @@ defmodule Phoenix.Component do
     doc: "The `Phoenix.LiveView.UploadEntry` struct"
   )
 
+  attr.(:id, :string,
+    default: nil,
+    doc:
+      "the id of the img tag. Derived by default from the entry ref, but can be overridden as needed if you need to render a preview of the same entry multiple times on the same page"
+  )
+
   attr.(:rest, :global, [])
 
   def live_img_preview(assigns) do
     ~H"""
     <img
-      id={"phx-preview-#{@entry.ref}"}
+      id={@id || "phx-preview-#{@entry.ref}"}
       data-phx-upload-ref={@entry.upload_ref}
       data-phx-entry-ref={@entry.ref}
       data-phx-hook="Phoenix.LiveImgPreview"

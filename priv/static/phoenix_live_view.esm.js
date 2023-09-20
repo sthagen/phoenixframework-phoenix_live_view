@@ -321,6 +321,9 @@ var DOM = {
     if (href.startsWith("mailto:") || href.startsWith("tel:")) {
       return false;
     }
+    if (e.target.isContentEditable) {
+      return false;
+    }
     try {
       url = new URL(href);
     } catch (e2) {
@@ -922,6 +925,9 @@ var LiveUploader = class {
       return entry;
     });
     let groupedEntries = this._entries.reduce((acc, entry) => {
+      if (!entry.meta) {
+        return acc;
+      }
       let { name, callback } = entry.uploader(liveSocket.uploaders);
       acc[name] = acc[name] || { callback, entries: [] };
       acc[name].entries.push(entry);
@@ -3121,10 +3127,16 @@ var View = class {
   onJoinError(resp) {
     if (resp.reason === "reload") {
       this.log("error", () => [`failed mount with ${resp.status}. Falling back to page request`, resp]);
-      return this.onRedirect({ to: this.href });
+      if (this.isMain()) {
+        this.onRedirect({ to: this.href });
+      }
+      return;
     } else if (resp.reason === "unauthorized" || resp.reason === "stale") {
       this.log("error", () => ["unauthorized live_redirect. Falling back to page request", resp]);
-      return this.onRedirect({ to: this.href });
+      if (this.isMain()) {
+        this.onRedirect({ to: this.href });
+      }
+      return;
     }
     if (resp.redirect || resp.live_redirect) {
       this.joinPending = false;
@@ -3552,6 +3564,7 @@ var View = class {
       if (inputs.length === 0) {
         return;
       }
+      inputs.forEach((input2) => input2.hasAttribute(PHX_UPLOAD_REF) && LiveUploader.clearFiles(input2));
       let input = inputs.find((el) => el.type !== "hidden") || inputs[0];
       let phxEvent = form.getAttribute(this.binding(PHX_AUTO_RECOVER)) || form.getAttribute(this.binding("change"));
       js_default.exec("change", phxEvent, view, input, ["push", { _target: input.name, newCid, callback }]);
