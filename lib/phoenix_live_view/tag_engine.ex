@@ -169,8 +169,7 @@ defmodule Phoenix.LiveView.TagEngine do
       previous_token_slot?: false,
       source: Keyword.fetch!(opts, :source),
       tag_handler: tag_handler,
-      annotate_root_tag: Keyword.get(opts, :annotate_root_tag),
-      has_tags?: false
+      annotate_root_tag: Keyword.get(opts, :annotate_root_tag)
     }
   end
 
@@ -187,10 +186,11 @@ defmodule Phoenix.LiveView.TagEngine do
       |> validate_unclosed_tags!("template")
 
     opts = [root: token_state.root || false]
+    %{caller: caller, annotate_root_tag: annotate_root_tag} = state
 
     opts =
-      if anno_func = state.has_tags? && state.caller && state.annotate_root_tag do
-        Keyword.put(opts, :root_annotation, anno_func.(state.caller))
+      if annotate_root_tag && caller && has_tags?(tokens) do
+        [root_annotation: annotate_root_tag.(caller)] ++ opts
       else
         opts
       end
@@ -201,6 +201,14 @@ defmodule Phoenix.LiveView.TagEngine do
       require Phoenix.LiveView.TagEngine
       unquote(ast)
     end
+  end
+
+  defp has_tags?(tokens) do
+    Enum.any?(tokens, fn
+      {:text, _, _} -> false
+      {:expr, _, _} -> false
+      _ -> true
+    end)
   end
 
   defp validate_unclosed_tags!(%{tags: []} = state, _context) do
@@ -248,7 +256,7 @@ defmodule Phoenix.LiveView.TagEngine do
       previous_token_slot?: false,
       indentation: indentation,
       tag_handler: tag_handler,
-      annotate_root_tag: annotate_root_tag,
+      annotate_root_tag: annotate_root_tag
     }
   end
 
@@ -267,16 +275,13 @@ defmodule Phoenix.LiveView.TagEngine do
   def handle_text(state, meta, text) do
     %{file: file, indentation: indentation, tokens: tokens, cont: cont, source: source} = state
     tokenizer_state = Tokenizer.init(indentation, file, source, state.tag_handler)
-
-    {tokens, cont, tokenizer_has_tags?} =
-      Tokenizer.tokenize(text, meta, tokens, cont, tokenizer_state)
+    {tokens, cont} = Tokenizer.tokenize(text, meta, tokens, cont, tokenizer_state)
 
     %{
       state
       | tokens: tokens,
         cont: cont,
-        source: state.source,
-        has_tags?: state.has_tags? || tokenizer_has_tags?
+        source: state.source
     }
   end
 
@@ -741,21 +746,20 @@ defmodule Phoenix.LiveView.TagEngine do
   #   pop_special_attrs!(state, ":for", attrs, %{}, state)
   #   => {%{}, []}
   defp pop_special_attrs!(attrs, tag_meta, state) do
-    Enum.reduce([:for, :if], {tag_meta, attrs}, fn attr, {meta_acc, attrs_acc} ->
-      string_attr = ":#{attr}"
+    Enum.reduce([for: ":for", if: ":if"], {tag_meta, attrs}, fn
+      {attr, string_attr}, {meta_acc, attrs_acc} ->
+        attrs_acc
+        |> List.keytake(string_attr, 0)
+        |> raise_if_duplicated_special_attr!(state)
+        |> case do
+          {{^string_attr, expr, meta}, attrs} ->
+            parsed_expr = parse_expr!(expr, state.file)
+            validate_quoted_special_attr!(string_attr, parsed_expr, meta, state)
+            {Map.put(meta_acc, attr, parsed_expr), attrs}
 
-      attrs_acc
-      |> List.keytake(string_attr, 0)
-      |> raise_if_duplicated_special_attr!(state)
-      |> case do
-        {{^string_attr, expr, meta}, attrs} ->
-          parsed_expr = parse_expr!(expr, state.file)
-          validate_quoted_special_attr!(string_attr, parsed_expr, meta, state)
-          {Map.put(meta_acc, attr, parsed_expr), attrs}
-
-        nil ->
-          {meta_acc, attrs_acc}
-      end
+          nil ->
+            {meta_acc, attrs_acc}
+        end
     end)
   end
 

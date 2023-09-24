@@ -1,8 +1,8 @@
 defmodule Phoenix.LiveView.Tokenizer do
   @moduledoc false
-  @space_chars '\s\t\f'
-  @quote_chars '"\''
-  @stop_chars '>/=\r\n' ++ @quote_chars ++ @space_chars
+  @space_chars ~c"\s\t\f"
+  @quote_chars ~c"\"'"
+  @stop_chars ~c">/=\r\n" ++ @quote_chars ++ @space_chars
 
   defmodule ParseError do
     @moduledoc false
@@ -80,8 +80,7 @@ defmodule Phoenix.LiveView.Tokenizer do
       context: [],
       source: source,
       indentation: indentation,
-      tag_handler: tag_handler,
-      has_tags?: false
+      tag_handler: tag_handler
     }
   end
 
@@ -153,7 +152,7 @@ defmodule Phoenix.LiveView.Tokenizer do
 
   defp handle_text("<" <> rest, line, column, buffer, acc, state) do
     text_to_acc = text_to_acc(buffer, acc, line, column, state.context)
-    handle_tag_open(rest, line, column + 1, text_to_acc, %{state | context: [], has_tags?: true})
+    handle_tag_open(rest, line, column + 1, text_to_acc, %{state | context: []})
   end
 
   defp handle_text(<<c::utf8, rest::binary>>, line, column, buffer, acc, state) do
@@ -161,7 +160,7 @@ defmodule Phoenix.LiveView.Tokenizer do
   end
 
   defp handle_text(<<>>, line, column, buffer, acc, state) do
-    ok(text_to_acc(buffer, acc, line, column, state.context), :text, state)
+    ok(text_to_acc(buffer, acc, line, column, state.context), :text)
   end
 
   ## handle_doctype
@@ -205,8 +204,8 @@ defmodule Phoenix.LiveView.Tokenizer do
     handle_script(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
   end
 
-  defp handle_script(<<>>, line, column, buffer, acc, state) do
-    ok(text_to_acc(buffer, acc, line, column, []), :script, state)
+  defp handle_script(<<>>, line, column, buffer, acc, _state) do
+    ok(text_to_acc(buffer, acc, line, column, []), :script)
   end
 
   ## handle_style
@@ -232,8 +231,8 @@ defmodule Phoenix.LiveView.Tokenizer do
     handle_style(rest, line, column + 1, [char_or_bin(c) | buffer], acc, state)
   end
 
-  defp handle_style(<<>>, line, column, buffer, acc, state) do
-    ok(text_to_acc(buffer, acc, line, column, []), :style, state)
+  defp handle_style(<<>>, line, column, buffer, acc, _state) do
+    ok(text_to_acc(buffer, acc, line, column, []), :style)
   end
 
   ## handle_comment
@@ -247,7 +246,7 @@ defmodule Phoenix.LiveView.Tokenizer do
       {:ok, line_end, column_end, buffer} ->
         acc = text_to_acc(buffer, acc, line_end, column_end, state.context)
         # We do column - 4 to point to the opening <!--
-        ok(acc, {:comment, line, column - 4}, state)
+        ok(acc, {:comment, line, column - 4})
     end
   end
 
@@ -636,8 +635,8 @@ defmodule Phoenix.LiveView.Tokenizer do
 
   ## helpers
 
-  @compile {:inline, ok: 3, char_or_bin: 1}
-  defp ok(acc, cont, state), do: {acc, cont, state.has_tags?}
+  @compile {:inline, ok: 2, char_or_bin: 1}
+  defp ok(acc, cont), do: {acc, cont}
 
   defp char_or_bin(c) when c <= 127, do: c
   defp char_or_bin(c), do: <<c::utf8>>
@@ -655,20 +654,17 @@ defmodule Phoenix.LiveView.Tokenizer do
     meta = %{line_end: line, column_end: column}
 
     meta =
-      if context = get_context(context) do
-        Map.put(meta, :context, trim_context(context))
-      else
+      if context == [] do
         meta
+      else
+        Map.put(meta, :context, trim_context(context))
       end
 
     [{:text, buffer_to_string(buffer), meta} | acc]
   end
 
-  defp trim_context([:comment_start, :comment_end | [_ | _] = rest]), do: trim_context(rest)
-  defp trim_context(rest), do: rest
-
-  defp get_context([]), do: nil
-  defp get_context(context), do: Enum.reverse(context)
+  defp trim_context([:comment_end, :comment_start | [_ | _] = rest]), do: trim_context(rest)
+  defp trim_context(rest), do: Enum.reverse(rest)
 
   defp put_attr([{type, name, attrs, meta} | acc], attr, attr_meta, value \\ nil) do
     attrs = [{attr, value, attr_meta} | attrs]
