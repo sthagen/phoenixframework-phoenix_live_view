@@ -115,9 +115,10 @@ export default class View {
     this.children = this.parent ? null : {}
     this.root.children[this.id] = {}
     this.channel = this.liveSocket.channel(`lv:${this.id}`, () => {
+      let url = this.href && this.expandURL(this.href)
       return {
-        redirect: this.redirect ? this.href : undefined,
-        url: this.redirect ? undefined : this.href || undefined,
+        redirect: this.redirect ? url : undefined,
+        url: this.redirect ? undefined : url || undefined,
         params: this.connectParams(liveReferer),
         session: this.getSession(),
         static: this.getStatic(),
@@ -1062,11 +1063,23 @@ export default class View {
     })
   }
 
-  dispatchUploads(name, filesOrBlobs){
-    let inputs = DOM.findUploadInputs(this.el).filter(el => el.name === name)
+  dispatchUploads(targetCtx, name, filesOrBlobs){
+    let targetElement = this.targetCtxElement(targetCtx) || this.el;
+    let inputs = DOM.findUploadInputs(targetElement).filter(el => el.name === name)
     if(inputs.length === 0){ logError(`no live file inputs found matching the name "${name}"`) }
     else if(inputs.length > 1){ logError(`duplicate live file inputs found matching the name "${name}"`) }
     else { DOM.dispatchEvent(inputs[0], PHX_TRACK_UPLOADS, {detail: {files: filesOrBlobs}}) }
+  }
+
+  targetCtxElement(targetCtx) {
+    if(isCid(targetCtx)){
+      let [target] = DOM.findComponentNodeList(this.el, targetCtx)
+      return target
+    } else if(targetCtx) {
+      return targetCtx
+    } else {
+      return null
+    }
   }
 
   pushFormRecovery(form, newCid, callback){
