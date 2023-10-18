@@ -3419,7 +3419,7 @@ var View = class {
     if (isCid(targetCtx)) {
       return targetCtx;
     }
-    let cidOrSelector = target.getAttribute(this.binding("target"));
+    let cidOrSelector = opts.target || target.getAttribute(this.binding("target"));
     if (isCid(cidOrSelector)) {
       return parseInt(cidOrSelector);
     } else if (targetCtx && (cidOrSelector !== null || opts.target)) {
@@ -3503,7 +3503,7 @@ var View = class {
   }
   pushInput(inputEl, targetCtx, forceCid, phxEvent, opts, callback) {
     let uploads;
-    let cid = isCid(forceCid) ? forceCid : this.targetComponentID(inputEl.form, targetCtx);
+    let cid = isCid(forceCid) ? forceCid : this.targetComponentID(inputEl.form, targetCtx, opts);
     let refGenerator = () => this.putRef([inputEl, inputEl.form], "change", opts);
     let formData;
     let meta = this.extractMeta(inputEl.form);
@@ -3599,7 +3599,7 @@ var View = class {
     let cid = this.targetComponentID(formEl, targetCtx);
     if (LiveUploader.hasUploadsInProgress(formEl)) {
       let [ref, _els] = refGenerator();
-      let push = () => this.pushFormSubmit(formEl, submitter, targetCtx, phxEvent, opts, onReply);
+      let push = () => this.pushFormSubmit(formEl, targetCtx, phxEvent, submitter, opts, onReply);
       return this.scheduleSubmit(formEl, ref, opts, push);
     } else if (LiveUploader.inputsAwaitingPreflight(formEl).length > 0) {
       let [ref, els] = refGenerator();
