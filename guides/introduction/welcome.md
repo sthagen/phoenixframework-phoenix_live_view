@@ -88,7 +88,7 @@ values from `assigns` and sent it to the client.
 
 If you look at the HTML rendered, you will notice there is a button
 with a `phx-click` attribute. When the button is clicked, a
-"inc_temperature" event is sent to the server, which is matched and
+`"inc_temperature"` event is sent to the server, which is matched and
 handled by the `handle_event` callback. This callback updates the socket
 and returns `{:noreply, socket}` with the updated socket.
 `handle_*` callbacks in LiveView (and in Elixir in general) are
@@ -178,7 +178,7 @@ Then on the server, all LiveView bindings are handled with the `handle_event/3`
 callback, for example:
 
     def handle_event("inc_temperature", _value, socket) do
-      {:ok, update(socket, :temperature, &(&1 + 1))}
+      {:noreply, update(socket, :temperature, &(&1 + 1))}
     end
 
 To update UI state, for example, to open and close dropdowns, switch tabs,
