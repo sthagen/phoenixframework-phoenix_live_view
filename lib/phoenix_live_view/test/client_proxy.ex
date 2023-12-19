@@ -315,7 +315,7 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
                {:ok, event_or_js} <- maybe_event(type, node, element),
                {:ok, dom_values} <- maybe_values(type, node, element) do
             event_or_js
-            |> maybe_js_event()
+            |> maybe_push_events()
             |> List.wrap()
             |> Enum.map(fn {event, js_values, js_target_selector} ->
               event_values = Map.merge(dom_values, js_values)
@@ -970,14 +970,9 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
   end
 
   defp maybe_event(:click, {"a", _, _} = node, element) do
-    live_nav = DOM.attribute(node, "data-phx-link")
-
-    cond do
-      event = is_nil(live_nav) && DOM.attribute(node, "phx-click") ->
-        {:ok, event}
-
-      to = DOM.attribute(node, "href") ->
-        case live_nav do
+    with :error <- maybe_phx_click_event(node, element) do
+      if to = DOM.attribute(node, "href") do
+        case DOM.attribute(node, "data-phx-link") do
           "patch" ->
             {:patch, proxy_topic(element), to}
 
@@ -988,10 +983,21 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
           nil ->
             {:stop, proxy_topic(element), {:redirect, %{to: to}}}
         end
+      else
+        message =
+          "clicked link selected by #{inspect(element.selector)} does not have phx-click or href attributes"
 
-      true ->
-        {:error, :invalid,
-         "clicked link selected by #{inspect(element.selector)} does not have phx-click or href attributes"}
+        {:error, :invalid, message}
+      end
+    end
+  end
+
+  defp maybe_event(:click, node, element) do
+    with :error <- maybe_phx_click_event(node, element) do
+      message =
+        "element selected by #{inspect(element.selector)} does not have phx-click attribute"
+
+      {:error, :invalid, message}
     end
   end
 
@@ -1019,7 +1025,32 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
     end
   end
 
-  defp maybe_js_event("[" <> _ = encoded_js) do
+  defp maybe_phx_click_event(node, element) do
+    if phx_click = DOM.attribute(node, "phx-click") do
+      phx_click
+      |> maybe_js_decode()
+      |> Enum.find_value({:ok, phx_click}, fn
+        ["patch", %{"href" => to}] ->
+          {:patch, proxy_topic(element), to}
+
+        ["navigate", %{"href" => to, "replace" => true}] ->
+          {:stop, proxy_topic(element), {:live_redirect, %{to: to, kind: :replace}}}
+
+        ["navigate", %{"href" => to}] ->
+          {:stop, proxy_topic(element), {:live_redirect, %{to: to, kind: :push}}}
+
+        _ ->
+          false
+      end)
+    else
+      :error
+    end
+  end
+
+  defp maybe_js_decode("[" <> _ = encoded_js), do: Phoenix.json_library().decode!(encoded_js)
+  defp maybe_js_decode(_), do: []
+
+  defp maybe_push_events("[" <> _ = encoded_js) do
     js = Phoenix.json_library().decode!(encoded_js)
     op = Enum.filter(js, fn [kind, _args] -> kind == "push" end)
 
@@ -1034,7 +1065,7 @@ defmodule Phoenix.LiveViewTest.ClientProxy do
     end
   end
 
-  defp maybe_js_event(event), do: {event, _values = %{}, _target = nil}
+  defp maybe_push_events(event), do: {event, _values = %{}, _target = nil}
 
   defp maybe_enabled(_type, {tag, _, _}, %{form_data: form_data})
        when tag != "form" and form_data != nil do

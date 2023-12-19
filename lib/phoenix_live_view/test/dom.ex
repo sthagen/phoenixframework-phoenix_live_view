@@ -432,6 +432,10 @@ defmodule Phoenix.LiveViewTest.DOM do
         new_children =
           Enum.reduce(stream_inserts, children, fn {id, {ref, insert_at, _limit}}, acc ->
             old_index = Enum.find_index(acc, &(attribute(&1, "id") == id))
+
+            not_appended? =
+              is_nil(Enum.find_index(updated_appended, &(attribute(&1, "id") == id)))
+
             existing? = Enum.find_index(updated_existing_children, &(attribute(&1, "id") == id))
             deleted? = MapSet.member?(stream_deletes, id)
 
@@ -441,9 +445,14 @@ defmodule Phoenix.LiveViewTest.DOM do
                 child -> set_attr(child, "data-phx-stream", ref)
               end
 
+            parent_id = parent_id(html_tree, id)
+
             cond do
-              # skip added children that aren't ours
-              parent_id(html_tree, id) != container_id ->
+              !child ->
+                acc
+
+              # skip added children that aren't ours if they are not being appended
+              not_appended? && parent_id && parent_id != container_id ->
                 acc
 
               # do not append existing child if already present, only update in place
@@ -586,7 +595,7 @@ defmodule Phoenix.LiveViewTest.DOM do
     |> parse_sorted!()
   end
 
-  @doc"""
+  @doc """
   Parses HTML into Floki format with sorted attributes.
   """
   def parse_sorted!(value) do

@@ -104,6 +104,20 @@ defmodule Phoenix.LiveView.StreamTest do
     assert lv |> render() |> users_in_dom("admins") == [{"admins-2", "updated"}]
   end
 
+  test "should properly reset after a steam has been set after mount", %{conn: conn} do
+    {:ok, lv, _} = live(conn, "/stream")
+    assert lv |> element("#users div") |> has_element?()
+
+    lv |> render_hook("reset-users", %{})
+    refute lv |> element("#users div") |> has_element?()
+
+    lv |> render_hook("stream-users", %{})
+    assert lv |> element("#users div") |> has_element?()
+
+    lv |> render_hook("reset-users", %{})
+    refute lv |> element("#users div") |> has_element?()
+  end
+
   test "stream reset on patch", %{conn: conn} do
     {:ok, lv, _html} = live(conn, "/healthy/fruits")
 
@@ -125,6 +139,20 @@ defmodule Phoenix.LiveView.StreamTest do
 
     refute has_element?(lv, "li", "Apples")
     refute has_element?(lv, "li", "Oranges")
+
+    lv
+    |> element("a", "Switch")
+    |> render_click()
+
+    assert_patched(lv, "/healthy/fruits")
+
+    assert has_element?(lv, "h1", "Fruits")
+
+    refute has_element?(lv, "li", "Carrots")
+    refute has_element?(lv, "li", "Tomatoes")
+
+    assert has_element?(lv, "li", "Apples")
+    assert has_element?(lv, "li", "Oranges")
   end
 
   describe "within live component" do

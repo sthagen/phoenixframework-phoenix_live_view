@@ -3,11 +3,11 @@ defmodule Phoenix.LiveView.Async do
 
   alias Phoenix.LiveView.{AsyncResult, Socket, Channel}
 
-  def start_async(%Socket{} = socket, key, func) when is_function(func, 0) do
-    run_async_task(socket, key, func, :start)
+  def start_async(%Socket{} = socket, key, func, opts \\ []) when is_function(func, 0) do
+    run_async_task(socket, key, func, :start, opts)
   end
 
-  def assign_async(%Socket{} = socket, key_or_keys, func)
+  def assign_async(%Socket{} = socket, key_or_keys, func, opts \\ [])
       when (is_atom(key_or_keys) or is_list(key_or_keys)) and
              is_function(func, 0) do
     keys = List.wrap(key_or_keys)
@@ -49,14 +49,21 @@ defmodule Phoenix.LiveView.Async do
 
     socket
     |> Phoenix.Component.assign(new_assigns)
-    |> run_async_task(keys, wrapped_func, :assign)
+    |> run_async_task(keys, wrapped_func, :assign, opts)
   end
 
-  defp run_async_task(%Socket{} = socket, key, func, kind) do
+  defp run_async_task(%Socket{} = socket, key, func, kind, opts) do
     if Phoenix.LiveView.connected?(socket) do
       lv_pid = self()
       cid = cid(socket)
-      {:ok, pid} = Task.start_link(fn -> do_async(lv_pid, cid, key, func, kind) end)
+      {:ok, pid} = if supervisor = Keyword.get(opts, :supervisor) do
+        Task.Supervisor.start_child(supervisor, fn ->
+          Process.link(lv_pid)
+          do_async(lv_pid, cid, key, func, kind)
+        end)
+      else
+        Task.start_link(fn -> do_async(lv_pid, cid, key, func, kind) end)
+      end
 
       ref =
         :erlang.monitor(:process, pid, alias: :reply_demonitor, tag: {__MODULE__, key, cid, kind})
@@ -128,16 +135,22 @@ defmodule Phoenix.LiveView.Async do
   defp handle_kind(socket, maybe_component, :start, key, result) do
     callback_mod = maybe_component || socket.view
 
-    case callback_mod.handle_async(key, result, socket) do
-      {:noreply, %Socket{} = new_socket} ->
-        new_socket
+    case Phoenix.LiveView.Lifecycle.handle_async(key, result, socket) do
+      {:cont, %Socket{} = socket} ->
+        case callback_mod.handle_async(key, result, socket) do
+          {:noreply, %Socket{} = new_socket} ->
+            new_socket
 
-      other ->
-        raise ArgumentError, """
-        expected #{inspect(callback_mod)}.handle_async/3 to return {:noreply, socket}, got:
+          other ->
+            raise ArgumentError, """
+            expected #{inspect(callback_mod)}.handle_async/3 to return {:noreply, socket}, got:
 
-            #{inspect(other)}
-        """
+                #{inspect(other)}
+            """
+        end
+
+      {:halt, %Socket{} = socket} ->
+        socket
     end
   end
 

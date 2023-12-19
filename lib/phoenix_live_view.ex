@@ -714,7 +714,9 @@ defmodule Phoenix.LiveView do
       upload channel when a new chunk has not been received. Defaults `10_000`.
 
     * `:external` - The 2-arity function for generating metadata for external
-      client uploaders. See the Uploads section for example usage.
+      client uploaders. This function must return either `{:ok, meta, socket}`
+      or `{:error, meta, socket}` where meta is a map. See the Uploads section
+      for example usage.
 
     * `:progress` - The optional 3-arity function for receiving progress events
 
@@ -1375,7 +1377,7 @@ defmodule Phoenix.LiveView do
   lifecycle in order to bind/update assigns, intercept events,
   patches, and regular messages when necessary, and to inject
   common functionality. Use `attach_hook/1` on any of the following
-  lifecycle stages: `:handle_params`, `:handle_event`, `:handle_info`, and
+  lifecycle stages: `:handle_params`, `:handle_event`, `:handle_info`, `:handle_async`, and
   `:after_render`. To attach a hook to the `:mount` stage, use `on_mount/1`.
 
   > Note: only `:after_render` hooks are currently supported in LiveComponents.
@@ -1831,6 +1833,11 @@ defmodule Phoenix.LiveView do
   and the result when the function completes.
 
   The task is only started when the socket is connected.
+   
+  ## Options
+    
+    * `:supervisor` - allows you to specify a `Task.Supervisor` to supervise the task.
+
 
   ## Examples
 
@@ -1856,12 +1863,11 @@ defmodule Phoenix.LiveView do
         # ...
         send_update(parent, Component, data)
       end)
-
   """
-  def assign_async(%Socket{} = socket, key_or_keys, func)
+  def assign_async(%Socket{} = socket, key_or_keys, func, opts \\ [])
       when (is_atom(key_or_keys) or is_list(key_or_keys)) and
              is_function(func, 0) do
-    Async.assign_async(socket, key_or_keys, func)
+    Async.assign_async(socket, key_or_keys, func, opts)
   end
 
   @doc """
