@@ -234,11 +234,15 @@ defmodule Phoenix.LiveView.Channel do
   end
 
   def handle_info(%Message{topic: topic, event: "event"} = msg, %{topic: topic} = state) do
-    %{"value" => raw_val, "event" => event, "type" => type} = msg.payload
+    %{"value" => raw_val, "event" => event, "type" => type} = payload = msg.payload
     val = decode_event_type(type, raw_val)
 
     if cid = msg.payload["cid"] do
-      component_handle_event(state, cid, event, val, msg.ref, msg.payload)
+      component_handle(state, cid, msg.ref, fn component_socket, component ->
+        component_socket
+        |> maybe_update_uploads(payload)
+        |> inner_component_handle_event(component, event, val)
+      end)
     else
       new_state = %{state | socket: maybe_update_uploads(state.socket, msg.payload)}
 
@@ -251,13 +255,19 @@ defmodule Phoenix.LiveView.Channel do
   def handle_info({@prefix, :async_result, {kind, info}}, state) do
     {ref, cid, keys, result} = info
 
-    new_state =
-      write_socket(state, cid, nil, fn socket, maybe_component ->
-        new_socket = Async.handle_async(socket, maybe_component, kind, keys, ref, result)
-        {new_socket, {:ok, nil, state}}
-      end)
+    if cid do
+      component_handle(state, cid, nil, fn component_socket, component ->
+        component_socket =
+          %Socket{redirected: redirected, assigns: assigns} =
+          Async.handle_async(component_socket, component, kind, keys, ref, result)
 
-    {:noreply, new_state}
+        {component_socket, {redirected, assigns.flash}}
+      end)
+    else
+      new_socket = Async.handle_async(state.socket, nil, kind, keys, ref, result)
+
+      handle_result({:noreply, new_socket}, {:handle_async, 3, nil}, state)
+    end
   end
 
   def handle_info({@prefix, :drop_upload_entries, info}, state) do
@@ -632,25 +642,18 @@ defmodule Phoenix.LiveView.Channel do
     """
   end
 
-  defp component_handle_event(state, cid, event, val, ref, payload) do
+  defp component_handle(state, cid, ref, fun) do
     %{socket: socket, components: components} = state
-
-    result =
-      Diff.write_component(socket, cid, components, fn component_socket, component ->
-        component_socket
-        |> maybe_update_uploads(payload)
-        |> inner_component_handle_event(component, event, val)
-      end)
 
     # Due to race conditions, the browser can send a request for a
     # component ID that no longer exists. So we need to check for
     # the :error case accordingly.
-    case result do
+    case Diff.write_component(socket, cid, components, fun) do
       {diff, new_components, {redirected, flash}} ->
         new_state = %{state | components: new_components}
 
         if redirected do
-          handle_redirect(new_state, redirected, flash, nil, {diff, ref})
+          handle_redirect(new_state, redirected, flash, nil, ref && {diff, ref})
         else
           {:noreply, push_diff(new_state, diff, ref)}
         end
