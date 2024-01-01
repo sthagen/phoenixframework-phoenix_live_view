@@ -389,6 +389,9 @@ export default class View {
 
     patch.after("added", el => {
       this.liveSocket.triggerDOM("onNodeAdded", [el])
+      let phxViewportTop = this.binding(PHX_VIEWPORT_TOP)
+      let phxViewportBottom = this.binding(PHX_VIEWPORT_BOTTOM)
+      DOM.maybeAddPrivateHooks(el, phxViewportTop, phxViewportBottom)
       this.maybeAddNewHook(el)
       if(el.getAttribute){ this.maybeMounted(el) }
     })
@@ -920,6 +923,7 @@ export default class View {
           this.uploadFiles(inputEl.form, targetCtx, ref, cid, (_uploads) => {
             callback && callback(resp)
             this.triggerAwaitingSubmit(inputEl.form)
+            this.undoRefs(ref)
           })
         }
       } else {
