@@ -167,7 +167,7 @@ export default class DOMPatch {
           return el
         },
         onNodeAdded: (el) => {
-          if(el.getAttribute){ this.maybeReOrderStream(el) }
+          if(el.getAttribute){ this.maybeReOrderStream(el, true) }
 
           // hack to fix Safari handling of img srcset and video tags
           if(el instanceof HTMLImageElement && el.srcset){
@@ -196,17 +196,9 @@ export default class DOMPatch {
             Array.from(fromEl.children).filter(child => {
               let {resetKept} = this.getStreamInsert(child)
               return resetKept
-            }).sort((a, b) => {
-              let aIdx = toIds.indexOf(a.id)
-              let bIdx = toIds.indexOf(b.id)
-              if(aIdx === bIdx){
-                return 0
-              } else if(aIdx < bIdx){
-                return -1
-              } else {
-                return 1
-              }
-            }).forEach(child => fromEl.appendChild(child))
+            }).forEach((child) => {
+              this.streamInserts[child.id].streamAt = toIds.indexOf(child.id)
+            })
           }
         },
         onNodeDiscarded: (el) => this.onNodeDiscarded(el),
@@ -226,7 +218,7 @@ export default class DOMPatch {
             externalFormTriggered = el
           }
           updates.push(el)
-          this.maybeReOrderStream(el)
+          this.maybeReOrderStream(el, false)
         },
         onBeforeElUpdated: (fromEl, toEl) => {
           DOM.maybeAddPrivateHooks(toEl, phxViewportTop, phxViewportBottom)
@@ -342,9 +334,9 @@ export default class DOMPatch {
     return insert || {}
   }
 
-  maybeReOrderStream(el){
+  maybeReOrderStream(el, isNew){
     let {ref, streamAt, limit} = this.getStreamInsert(el)
-    if(streamAt === undefined){ return }
+    if(streamAt === undefined || (streamAt === 0 && !isNew)){ return }
 
     // we need to the PHX_STREAM_REF here as well as addChild is invoked only for parents
     DOM.putSticky(el, PHX_STREAM_REF, el => el.setAttribute(PHX_STREAM_REF, ref))

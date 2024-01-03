@@ -650,9 +650,7 @@ var LiveView = (() => {
       }
     },
     mergeFocusedInput(target, source) {
-      if (!(target instanceof HTMLSelectElement)) {
-        DOM.mergeAttrs(target, source, { exclude: ["value"] });
-      }
+      DOM.mergeAttrs(target, source, { exclude: ["value"] });
       if (source.readOnly) {
         target.setAttribute("readonly", true);
       } else {
@@ -1883,7 +1881,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           },
           onNodeAdded: (el) => {
             if (el.getAttribute) {
-              this.maybeReOrderStream(el);
+              this.maybeReOrderStream(el, true);
             }
             if (el instanceof HTMLImageElement && el.srcset) {
               el.srcset = el.srcset;
@@ -1907,17 +1905,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
               Array.from(fromEl.children).filter((child) => {
                 let { resetKept } = this.getStreamInsert(child);
                 return resetKept;
-              }).sort((a, b) => {
-                let aIdx = toIds.indexOf(a.id);
-                let bIdx = toIds.indexOf(b.id);
-                if (aIdx === bIdx) {
-                  return 0;
-                } else if (aIdx < bIdx) {
-                  return -1;
-                } else {
-                  return 1;
-                }
-              }).forEach((child) => fromEl.appendChild(child));
+              }).forEach((child) => {
+                this.streamInserts[child.id].streamAt = toIds.indexOf(child.id);
+              });
             }
           },
           onNodeDiscarded: (el) => this.onNodeDiscarded(el),
@@ -1941,7 +1931,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
               externalFormTriggered = el;
             }
             updates.push(el);
-            this.maybeReOrderStream(el);
+            this.maybeReOrderStream(el, false);
           },
           onBeforeElUpdated: (fromEl, toEl) => {
             dom_default.maybeAddPrivateHooks(toEl, phxViewportTop, phxViewportBottom);
@@ -2049,9 +2039,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       let insert = el.id ? this.streamInserts[el.id] : {};
       return insert || {};
     }
-    maybeReOrderStream(el) {
+    maybeReOrderStream(el, isNew) {
       let { ref, streamAt, limit } = this.getStreamInsert(el);
-      if (streamAt === void 0) {
+      if (streamAt === void 0 || streamAt === 0 && !isNew) {
         return;
       }
       dom_default.putSticky(el, PHX_STREAM_REF, (el2) => el2.setAttribute(PHX_STREAM_REF, ref));
@@ -2591,6 +2581,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     exec_remove_class(eventType, phxEvent, view, sourceEl, el, { names, transition, time }) {
       this.addOrRemoveClasses(el, [], names, transition, time, view);
     },
+    exec_toggle_class(eventType, phxEvent, view, sourceEl, el, { to, names, transition, time }) {
+      this.toggleClasses(el, names, transition, view);
+    },
     exec_transition(eventType, phxEvent, view, sourceEl, el, { time, transition }) {
       this.addOrRemoveClasses(el, [], [], transition, time, view);
     },
@@ -2672,6 +2665,14 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           });
         }
       }
+    },
+    toggleClasses(el, classes, transition, time, view) {
+      window.requestAnimationFrame(() => {
+        let [prevAdds, prevRemoves] = dom_default.getSticky(el, "classes", [[], []]);
+        let newAdds = classes.filter((name) => prevAdds.indexOf(name) < 0 && !el.classList.contains(name));
+        let newRemoves = classes.filter((name) => prevRemoves.indexOf(name) < 0 && el.classList.contains(name));
+        this.addOrRemoveClasses(el, newAdds, newRemoves, transition, time, view);
+      });
     },
     addOrRemoveClasses(el, adds, removes, transition, time, view) {
       let [transitionRun, transitionStart, transitionEnd] = transition || [[], [], []];

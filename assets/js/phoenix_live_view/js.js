@@ -9,8 +9,6 @@ let JS = {
     let commands = phxEvent.charAt(0) === "[" ?
       JSON.parse(phxEvent) : [[defaultKind, defaultArgs]]
 
-
-
     commands.forEach(([kind, args]) => {
       if(kind === defaultKind && defaultArgs.data){
         args.data = Object.assign(args.data || {}, defaultArgs.data)
@@ -111,6 +109,10 @@ let JS = {
     this.addOrRemoveClasses(el, [], names, transition, time, view)
   },
 
+  exec_toggle_class(eventType, phxEvent, view, sourceEl, el, {to, names, transition, time}){
+    this.toggleClasses(el, names, transition, view)
+  },
+
   exec_transition(eventType, phxEvent, view, sourceEl, el, {time, transition}){
     this.addOrRemoveClasses(el, [], [], transition, time, view)
   },
@@ -200,6 +202,15 @@ let JS = {
         })
       }
     }
+  },
+
+  toggleClasses(el, classes, transition, time, view){
+    window.requestAnimationFrame(() => {
+      let [prevAdds, prevRemoves] = DOM.getSticky(el, "classes", [[], []])
+      let newAdds = classes.filter(name => prevAdds.indexOf(name) < 0 && !el.classList.contains(name))
+      let newRemoves = classes.filter(name => prevRemoves.indexOf(name) < 0 && el.classList.contains(name))
+      this.addOrRemoveClasses(el, newAdds, newRemoves, transition, time, view)
+    })
   },
 
   addOrRemoveClasses(el, adds, removes, transition, time, view){
