@@ -103,13 +103,11 @@ export default class DOMPatch {
     liveSocket.time("morphdom", () => {
       this.streams.forEach(([ref, inserts, deleteIds, reset]) => {
         Object.entries(inserts).forEach(([key, [streamAt, limit]]) => {
-          this.streamInserts[key] = {ref, streamAt, limit, resetKept: false}
+          this.streamInserts[key] = {ref, streamAt, limit, reset}
         })
         if(reset !== undefined){
           DOM.all(container, `[${PHX_STREAM_REF}="${ref}"]`, child => {
-            if(inserts[child.id]){
-              this.streamInserts[child.id].resetKept = true
-            } else {
+            if(!inserts[child.id]){
               this.removeStreamChildElement(child)
             }
           })
@@ -189,15 +187,14 @@ export default class DOMPatch {
           added.push(el)
         },
         onBeforeElChildrenUpdated: (fromEl, toEl) => {
-          // before we update the children, we need to set existing stream children
-          // into the new order from the server if they were kept during a stream reset
+          // when resetting a stream, we override the order of the streamInserts to
+          // the order of the elements in the diff (toEl)
           if(fromEl.getAttribute(phxUpdate) === PHX_STREAM){
-            let toIds = Array.from(toEl.children).map(child => child.id)
-            Array.from(fromEl.children).filter(child => {
-              let {resetKept} = this.getStreamInsert(child)
-              return resetKept
-            }).forEach((child) => {
-              this.streamInserts[child.id].streamAt = toIds.indexOf(child.id)
+            Array.from(toEl.children).forEach((child, idx) => {
+              // if this is not a reset, the streamAt must be preserved
+              if(this.streamInserts[child.id].reset){
+                this.streamInserts[child.id].streamAt = idx
+              }
             })
           }
         },
@@ -223,7 +220,11 @@ export default class DOMPatch {
         onBeforeElUpdated: (fromEl, toEl) => {
           DOM.maybeAddPrivateHooks(toEl, phxViewportTop, phxViewportBottom)
           DOM.cleanChildNodes(toEl, phxUpdate)
-          if(this.skipCIDSibling(toEl)){ return false }
+          if(this.skipCIDSibling(toEl)){
+            // if this is a live component used in a stream, we may need to reorder it
+            this.maybeReOrderStream(fromEl)
+            return false
+          }
           if(DOM.isPhxSticky(fromEl)){ return false }
           if(DOM.isIgnored(fromEl, phxUpdate) || (fromEl.form && fromEl.form.isSameNode(externalFormTriggered))){
             this.trackBefore("updated", fromEl, toEl)
@@ -256,7 +257,9 @@ export default class DOMPatch {
           DOM.copyPrivates(toEl, fromEl)
 
           let isFocusedFormEl = focused && fromEl.isSameNode(focused) && DOM.isFormInput(fromEl)
-          if(isFocusedFormEl && fromEl.type !== "hidden"){
+          // skip patching focused inputs unless focus is a select that has changed options
+          let focusedSelectChanged = isFocusedFormEl && this.isChangedSelect(fromEl, toEl)
+          if(isFocusedFormEl && fromEl.type !== "hidden" && !focusedSelectChanged){
             this.trackBefore("updated", fromEl, toEl)
             DOM.mergeFocusedInput(fromEl, toEl)
             DOM.syncAttrsToProps(fromEl)
@@ -265,6 +268,8 @@ export default class DOMPatch {
             trackedInputs.push(fromEl)
             return false
           } else {
+            // blur focused select if it changed so native UI is updated (ie safari won't update visible options)
+            if(focusedSelectChanged){ fromEl.blur() }
             if(DOM.isPhxUpdate(toEl, phxUpdate, ["append", "prepend"])){
               appendPrependUpdates.push(new DOMPostMorphRestorer(fromEl, toEl, toEl.getAttribute(phxUpdate)))
             }
@@ -372,6 +377,21 @@ export default class DOMPatch {
         this.trackAfter("transitionsDiscarded", pendingRemoves)
       })
     }
+  }
+
+  isChangedSelect(fromEl, toEl){
+    if(!(fromEl instanceof HTMLSelectElement) || fromEl.multiple){ return false }
+    if(fromEl.options.length !== toEl.options.length){ return true }
+
+    let fromSelected = fromEl.selectedOptions[0]
+    let toSelected = toEl.selectedOptions[0]
+    if(fromSelected && fromSelected.hasAttribute("selected")){
+      toSelected.setAttribute("selected", fromSelected.getAttribute("selected"))
+    }
+
+    // in general we have to be very careful with using isEqualNode as it does not a reliable
+    // DOM tree equality check, but for selection attributes and options it works fine
+    return !fromEl.isEqualNode(toEl)
   }
 
   isCIDPatch(){ return this.cidPatch }

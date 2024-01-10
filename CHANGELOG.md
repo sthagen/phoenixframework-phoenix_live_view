@@ -4,9 +4,11 @@
 
 ### Bug fixes
   * Fix phx-remove on sticky LiveViews
+  * Fix phx-disabled-with not restoring button disabled state on empty diff acknowledgement
 
 ### Enhancements
   * Add `JS.toggle_class`
+  * Force update select options when the options changed from the server while a select has focus
 
 ## 0.20.3 (2024-01-02)
 
