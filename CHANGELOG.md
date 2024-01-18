@@ -6,10 +6,12 @@
   * Fix phx-remove on sticky LiveViews
   * Fix phx-disabled-with not restoring button disabled state on empty diff acknowledgement
   * Fix stream reset not ordering items correctly
+  * Send `{:shutdown, :cancel}` to `handle_async/3` on `cancel_async`
 
 ### Enhancements
   * Add `JS.toggle_class`
   * Force update select options when the options changed from the server while a select has focus
+  * Introduce `phx-feedback-group` for handling feedback for composite input groups
 
 ## 0.20.3 (2024-01-02)
 

@@ -106,7 +106,6 @@ import {
   closestPhxBinding,
   closure,
   debug,
-  isObject,
   maybe
 } from "./utils"
 
@@ -732,7 +731,7 @@ export default class LiveSocket {
     }, false)
   }
 
-  maybeScroll(scroll) {
+  maybeScroll(scroll){
     if(typeof(scroll) === "number"){
       requestAnimationFrame(() => {
         window.scrollTo(0, scroll)
@@ -878,10 +877,12 @@ export default class LiveSocket {
       let form = e.target
       DOM.resetForm(form, this.binding(PHX_FEEDBACK_FOR))
       let input = Array.from(form.elements).find(el => el.type === "reset")
-      // wait until next tick to get updated input value
-      window.requestAnimationFrame(() => {
-        input.dispatchEvent(new Event("input", {bubbles: true, cancelable: false}))
-      })
+      if(input){
+        // wait until next tick to get updated input value
+        window.requestAnimationFrame(() => {
+          input.dispatchEvent(new Event("input", {bubbles: true, cancelable: false}))
+        })
+      }
     })
   }
 
