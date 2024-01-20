@@ -10,6 +10,8 @@
   * Prevent events from child LiveViews from bubbling up to root LiveView when child is not mounted yet
   * Fix `phx-mounted` being called twice for stream items
   * Do not move existing stream items when prepending
+  * Fix live component rendering breaking when the server adds a component back that was pruned by the client (#3026)
+  * Allow redirect from upload progress callback
 
 ### Enhancements
   * Add `JS.toggle_class`
@@ -17,6 +19,7 @@
   * Introduce `phx-feedback-group` for handling feedback for composite input groups
   * Add `validate_attrs` to slots
   * Support `phx-viewport` bindings in scrollable containers
+  * Perform client redirect when trying to live nav from dead client to avoid extra round trip
 
 ## 0.20.3 (2024-01-02)
 

@@ -180,6 +180,16 @@ defmodule Phoenix.LiveView.Channel do
         if event = entry && upload_conf.progress_event do
           case event.(upload_conf.name, entry, new_socket) do
             {:noreply, %Socket{} = new_socket} ->
+              new_socket =
+                if new_socket.redirected do
+                  flash = Utils.changed_flash(new_socket)
+                  send(new_socket.root_pid, {@prefix, :redirect, new_socket.redirected, flash})
+                  %Socket{new_socket | redirected: nil}
+                else
+                  new_socket
+                end
+
+
               {new_socket, {:ok, {msg.ref, %{}}, state}}
 
             other ->
@@ -736,9 +746,16 @@ defmodule Phoenix.LiveView.Channel do
               """
           end
 
+        new_component_socket =
+          if redirected do
+            Utils.clear_flash(component_socket)
+          else
+            component_socket
+          end
+
         {
-          {component_socket, {redirected, assigns.flash}},
-          %{socket: component_socket, component: component, event: event, params: val}
+          {new_component_socket, {redirected, assigns.flash}},
+          %{socket: new_component_socket, component: component, event: event, params: val}
         }
       end
     )

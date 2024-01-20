@@ -1684,6 +1684,7 @@ function morphdomFactory(morphAttrs2) {
                           removeNode(curFromNodeChild, fromEl, true);
                         }
                         curFromNodeChild = matchingFromEl;
+                        curFromNodeKey = getNodeKey(curFromNodeChild);
                       }
                     } else {
                       isCompatible = false;
@@ -1968,8 +1969,9 @@ var DOMPatch = class {
         onBeforeElChildrenUpdated: (fromEl, toEl) => {
           if (fromEl.getAttribute(phxUpdate) === PHX_STREAM) {
             Array.from(toEl.children).forEach((child, idx) => {
-              if (this.streamInserts[child.id].reset) {
-                this.streamInserts[child.id].streamAt = idx;
+              let insert = this.streamInserts[child.id];
+              if (insert && insert.reset) {
+                insert.streamAt = idx;
               }
             });
           }
@@ -2312,6 +2314,9 @@ var Rendered = class {
   getComponent(diff, cid) {
     return diff[COMPONENTS][cid];
   }
+  resetRender(cid) {
+    this.rendered[COMPONENTS][cid].reset = true;
+  }
   mergeDiff(diff) {
     let newc = diff[COMPONENTS];
     let cache = {};
@@ -2490,8 +2495,9 @@ var Rendered = class {
     let skip = onlyCids && !onlyCids.has(cid);
     component.newRender = !skip;
     component.magicId = `${this.parentViewId()}-c-${cid}`;
-    let changeTracking = true;
+    let changeTracking = !component.reset;
     let [html, streams] = this.recursiveToString(component, components, onlyCids, changeTracking, attrs);
+    delete component.reset;
     return [html, streams];
   }
 };
@@ -3862,7 +3868,7 @@ var View = class {
     let template = document.createElement("template");
     template.innerHTML = html;
     return dom_default.all(this.el, `form[${phxChange}]`).filter((form) => form.id && this.ownsElement(form)).filter((form) => form.elements.length > 0).filter((form) => form.getAttribute(this.binding(PHX_AUTO_RECOVER)) !== "ignore").map((form) => {
-      const phxChangeValue = form.getAttribute(phxChange).replaceAll(/([\[\]"])/g, "\\$1");
+      const phxChangeValue = CSS.escape(form.getAttribute(phxChange));
       let newForm = template.content.querySelector(`form[id="${form.id}"][${phxChange}="${phxChangeValue}"]`);
       if (newForm) {
         return [form, newForm, this.targetComponentID(newForm)];
@@ -3877,6 +3883,7 @@ var View = class {
     });
     if (willDestroyCIDs.length > 0) {
       this.pruningCIDs.push(...willDestroyCIDs);
+      this.pruningCIDs.forEach((cid) => this.rendered.resetRender(cid));
       this.pushWithReply(null, "cids_will_destroy", { cids: willDestroyCIDs }, () => {
         this.pruningCIDs = this.pruningCIDs.filter((cid) => willDestroyCIDs.indexOf(cid) !== -1);
         let completelyDestroyCIDs = willDestroyCIDs.filter((cid) => {
@@ -4555,7 +4562,7 @@ var LiveSocket = class {
     return callback ? callback(done) : done;
   }
   pushHistoryPatch(href, linkState, targetEl) {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.main.isMain()) {
       return browser_default.redirect(href);
     }
     this.withPageLoading({ to: href, kind: "patch" }, (done) => {
@@ -4574,7 +4581,7 @@ var LiveSocket = class {
     this.registerNewLocation(window.location);
   }
   historyRedirect(href, linkState, flash) {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.main.isMain()) {
       return browser_default.redirect(href, flash);
     }
     if (/^\/$|^\/[^\/]+.*$/.test(href)) {

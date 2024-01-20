@@ -155,6 +155,8 @@ export default class Rendered {
 
   getComponent(diff, cid){ return diff[COMPONENTS][cid] }
 
+  resetRender(cid){ this.rendered[COMPONENTS][cid].reset = true }
+
   mergeDiff(diff){
     let newc = diff[COMPONENTS]
     let cache = {}
@@ -286,7 +288,7 @@ export default class Rendered {
   //
   // changeTracking controls if we can apply the PHX_SKIP optimization.
   // It is disabled for comprehensions since we must re-render the entire collection
-  // and no invidial element is tracked inside the comprehension.
+  // and no individual element is tracked inside the comprehension.
   toOutputBuffer(rendered, templates, output, changeTracking, rootAttrs = {}){
     if(rendered[DYNAMICS]){ return this.comprehensionToBuffer(rendered, templates, output) }
     let {[STATIC]: statics} = rendered
@@ -319,7 +321,7 @@ export default class Rendered {
       } else {
         attrs = rootAttrs
       }
-      if(skip){ attrs[PHX_SKIP] = true}
+      if(skip){ attrs[PHX_SKIP] = true }
       let [newRoot, commentBefore, commentAfter] = modifyRoot(output.buffer, attrs, skip)
       rendered.newRender = false
       output.buffer = prevBuffer + commentBefore + newRoot + commentAfter
@@ -376,15 +378,23 @@ export default class Rendered {
     //
     //   2. The root PHX_SKIP optimization generalizes to all HEEx function components, and
     //     works in the same PHX_SKIP attribute fashion as 1, but the newRender tracking is done
-    //     at the general diff merge level. If we merge a diff with new dynamics, we necessariy have
+    //     at the general diff merge level. If we merge a diff with new dynamics, we necessarily have
     //     experienced a change which must be a newRender, and thus we can't skip the render.
     //
     // Both optimization flows apply here. newRender is set based on the onlyCids optimization, and
     // we track a deterministic magicId based on the cid.
+    //
+    // By default changeTracking is enabled, but we special case the flow where the client is pruning
+    // cids and the server adds the component back. In such cases, we explicitly disable changeTracking
+    // with resetRender for this cid, then re-enable it after the recursive call to skip the optimization
+    // for the entire component tree.
     component.newRender = !skip
     component.magicId = `${this.parentViewId()}-c-${cid}`
-    let changeTracking = true
+    // enable change tracking as long as the component hasn't been reset
+    let changeTracking = !component.reset
     let [html, streams] = this.recursiveToString(component, components, onlyCids, changeTracking, attrs)
+    // disable reset after we've rendered
+    delete component.reset
 
     return [html, streams]
   }

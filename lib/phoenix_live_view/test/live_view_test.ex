@@ -1203,6 +1203,19 @@ defmodule Phoenix.LiveViewTest do
   @doc false
   def __file_input__(view, selector, name, entries, builder) do
     cid = find_cid!(view, selector)
+    for entry <- entries do
+      content = entry[:content]
+      size = entry[:size]
+      if content && size && byte_size(content) != size do
+        raise ArgumentError, """
+        entry content size must match provided size.
+
+        By default the content size is calculated using byte_size/1, so you
+        rarely need to provide the size option yourself unless you are testing
+        for misbehaving clients.
+        """
+      end
+    end
 
     case Phoenix.LiveView.Channel.fetch_upload_config(view.pid, name, cid) do
       {:ok, %{external: false}} ->
@@ -1873,6 +1886,18 @@ defmodule Phoenix.LiveViewTest do
 
   Before making assertions about the how the upload is consumed server-side,
   you will need to call `render_submit/1`.
+
+  In the case where an upload progress callback issues a navigate, patch, or
+  redirect, the following will be returned:
+
+    * if the navigate is a `live_patch`, the current view will be patched
+      {:error, {:redirect, %{to: url}}}
+    * if the navigate is a `live_redirect`, this function will return
+      `{:error, {:live_redirect, %{to: url}}}`, which can be followed
+      with `follow_redirect/2`
+    * if the navigate is a regular redirect, this function will return
+      `{:error, {:redirect, %{to: url}}}`, which can be followed
+      with `follow_redirect/2`
   """
   def render_upload(%Upload{} = upload, entry_name, percent \\ 100) do
     entry_ref =
@@ -1933,7 +1958,23 @@ defmodule Phoenix.LiveViewTest do
   end
 
   defp render_chunk(upload, entry_name, percent) do
-    {:ok, _} = UploadClient.chunk(upload, entry_name, percent, proxy_pid(upload.view))
-    render(upload.view)
+    %{proxy: {_ref, _topic, pid}} = upload.view
+    monitor_ref = Process.monitor(pid)
+
+    case UploadClient.chunk(upload, entry_name, percent, proxy_pid(upload.view)) do
+      {:ok, _} ->
+        receive do
+          {:DOWN, ^monitor_ref, :process, _pid, {:shutdown, {:live_redirect, opts}}} ->
+            {:error, {:live_redirect, opts}}
+
+          {:DOWN, ^monitor_ref, :process, _pid, {:shutdown, {:redirect, opts}}} ->
+            {:error, {:redirect, opts}}
+        after
+          0 -> render(upload.view)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end
