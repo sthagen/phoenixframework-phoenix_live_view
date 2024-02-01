@@ -406,7 +406,7 @@ export default class LiveSocket {
           DOM.findPhxSticky(document).forEach(el => newMainEl.appendChild(el))
           this.outgoingMainEl.replaceWith(newMainEl)
           this.outgoingMainEl = null
-          callback && requestAnimationFrame(() => callback(linkRef))
+          callback && callback(linkRef)
           onDone()
         })
       }
@@ -649,7 +649,7 @@ export default class LiveSocket {
         return
       }
 
-      if(target.getAttribute("href") === "#" || target.form){ e.preventDefault() }
+      if(target.getAttribute("href") === "#"){ e.preventDefault() }
 
       // noop if we are in the middle of awaiting an ack for this el already
       if(target.hasAttribute(PHX_REF)){ return }
