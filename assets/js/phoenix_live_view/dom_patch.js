@@ -93,7 +93,7 @@ export default class DOMPatch {
     let phxViewportBottom = liveSocket.binding(PHX_VIEWPORT_BOTTOM)
     let phxTriggerExternal = liveSocket.binding(PHX_TRIGGER_ACTION)
     let added = []
-    let trackedInputs = []
+    let trackedForms = new Set()
     let updates = []
     let appendPrependUpdates = []
 
@@ -149,16 +149,15 @@ export default class DOMPatch {
           let {ref, streamAt} = this.getStreamInsert(child)
           if(ref === undefined){ return parent.appendChild(child) }
 
-          DOM.putSticky(child, PHX_STREAM_REF, el => el.setAttribute(PHX_STREAM_REF, ref))
+          this.setStreamRef(child, ref)
 
-          // we may need to restore the component, see removeStreamChildElement
-          if(child.getAttribute(PHX_COMPONENT)){
-            if(child.getAttribute(PHX_SKIP) !== null){
-              child = this.streamComponentRestore[child.id]
-            } else {
-              delete this.streamComponentRestore[child.id]
+          // we may need to restore skipped components, see removeStreamChildElement
+          child.querySelectorAll(`[${PHX_MAGIC_ID}][${PHX_SKIP}]`).forEach(el => {
+            const component = this.streamComponentRestore[el.getAttribute(PHX_MAGIC_ID)]
+            if(component){
+              el.replaceWith(component)
             }
-          }
+          })
 
           // streaming
           if(streamAt === 0){
@@ -189,7 +188,7 @@ export default class DOMPatch {
           }
 
           if(el.getAttribute && el.getAttribute("name") && DOM.isFormInput(el)){
-            trackedInputs.push(el)
+            trackedForms.add(el.form)
           }
           // nested view handling
           if((DOM.isPhxChild(el) && view.ownsElement(el)) || DOM.isPhxSticky(el) && view.ownsElement(el.parentNode)){
@@ -264,7 +263,7 @@ export default class DOMPatch {
             DOM.syncAttrsToProps(fromEl)
             updates.push(fromEl)
             DOM.applyStickyOperations(fromEl)
-            trackedInputs.push(fromEl)
+            trackedForms.add(fromEl.form)
             return false
           } else {
             // blur focused select if it changed so native UI is updated (ie safari won't update visible options)
@@ -276,7 +275,7 @@ export default class DOMPatch {
             DOM.syncAttrsToProps(toEl)
             DOM.applyStickyOperations(toEl)
             if(toEl.getAttribute("name") && DOM.isFormInput(toEl)){
-              trackedInputs.push(toEl)
+              trackedForms.add(toEl.form)
             }
             this.trackBefore("updated", fromEl, toEl)
             return true
@@ -293,7 +292,7 @@ export default class DOMPatch {
       })
     }
 
-    DOM.maybeHideFeedback(targetContainer, trackedInputs, phxFeedbackFor, phxFeedbackGroup)
+    DOM.maybeHideFeedback(targetContainer, trackedForms, phxFeedbackFor, phxFeedbackGroup)
 
     liveSocket.silenceEvents(() => DOM.restoreFocus(focused, selectionStart, selectionEnd))
     DOM.dispatchEvent(document, "phx:update")
@@ -328,10 +327,12 @@ export default class DOMPatch {
 
   removeStreamChildElement(child){
     if(!this.maybePendingRemove(child)){
-      if(child.getAttribute(PHX_COMPONENT) && this.streamInserts[child.id]){
-        // live component would be removed and then be re-added;
-        // because of the PHX_SKIP optimization we need to temporarily store the DOM node
-        this.streamComponentRestore[child.id] = child
+      if(this.streamInserts[child.id]){
+        // we need to store children so we can restore them later
+        // in case they are skipped
+        child.querySelectorAll(`[${PHX_MAGIC_ID}]`).forEach(el => {
+          this.streamComponentRestore[el.getAttribute(PHX_MAGIC_ID)] = el
+        })
       }
       child.remove()
       this.onNodeDiscarded(child)
@@ -343,12 +344,21 @@ export default class DOMPatch {
     return insert || {}
   }
 
-  maybeReOrderStream(el, isNew){
-    let {ref, streamAt} = this.getStreamInsert(el)
-    if(streamAt === undefined || (streamAt === 0 && !isNew)){ return }
-
-    // we need to the PHX_STREAM_REF here as well as addChild is invoked only for parents
+  setStreamRef(el, ref){
     DOM.putSticky(el, PHX_STREAM_REF, el => el.setAttribute(PHX_STREAM_REF, ref))
+  }
+
+  maybeReOrderStream(el, isNew){
+    let {ref, streamAt, reset} = this.getStreamInsert(el)
+    if(streamAt === undefined){ return }
+
+    // we need to set the PHX_STREAM_REF here as well as addChild is invoked only for parents
+    this.setStreamRef(el, ref)
+
+    if(!reset && !isNew){
+      // we only reorder if the element is new or it's a stream reset
+      return
+    }
 
     if(streamAt === 0){
       el.parentElement.insertBefore(el, el.parentElement.firstElementChild)

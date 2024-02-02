@@ -795,7 +795,7 @@ defmodule Phoenix.LiveView do
 
       <%= for entry <- @uploads.avatar.entries do %>
         ...
-        <button phx-click="cancel-upload" phx-value-ref="<%= entry.ref %>">cancel</button>
+        <button phx-click="cancel-upload" phx-value-ref={entry.ref}>cancel</button>
       <% end %>
 
       def handle_event("cancel-upload", %{"ref" => ref}, socket) do
@@ -1178,8 +1178,8 @@ defmodule Phoenix.LiveView do
   To use this functionality, the first step is to annotate which static files
   you want to be tracked by LiveView, with the `phx-track-static`. For example:
 
-      <link phx-track-static rel="stylesheet" href="<%= Routes.static_path(@conn, "/css/app.css") %>"/>
-      <script defer phx-track-static type="text/javascript" src="<%= Routes.static_path(@conn, "/js/app.js") %>"></script>
+      <link phx-track-static rel="stylesheet" href={Routes.static_path(@conn, "/css/app.css")} />
+      <script defer phx-track-static type="text/javascript" src={Routes.static_path(@conn, "/js/app.js")}></script>
 
   Now, whenever LiveView connects to the server, it will send a copy `src`
   or `href` attributes of all tracked statics and compare those values with
@@ -1728,12 +1728,11 @@ defmodule Phoenix.LiveView do
 
   ## Updating Items
 
-  As shown, an existing item on the client can be updated by issuing a `stream_insert` for
-  the existing item. When the client updates an existing item with an "append" operation
-  (passing the `at: -1` option), the item will remain in the same location as it was
-  previously, and will not be moved to the end of the parent children. To both update an
-  existing item and move it to the end of a collection, issue a `stream_delete`, followed
-  by a `stream_insert`. For example:
+  As shown, an existing item on the client can be updated by issuing a `stream_insert`
+  for the existing item. When the client updates an existing item, the item will remain
+  in the same location as it was previously, and will not be moved to the end of the
+  parent children. To both update an existing item and move it to another position,
+  issue a `stream_delete`, followed by a `stream_insert`. For example:
 
       song = get_song!(id)
 
