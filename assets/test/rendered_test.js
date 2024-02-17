@@ -38,10 +38,7 @@ describe("Rendered", () => {
       const diff2 = {[COMPONENTS]: {1: {[STATIC]: ["c"]}, 2: {[STATIC]: 1}}}
       let rendered = new Rendered("123", diff1)
       rendered.mergeDiff(diff2)
-      expect(rendered.get()).toEqual({[COMPONENTS]: {
-        1: {reset: true, [STATIC]: ["c"]},
-        2: {reset: true, [STATIC]: ["c"]}}
-      })
+      expect(rendered.get()).toEqual({[COMPONENTS]: {1: {[STATIC]: ["c"]}, 2: {[STATIC]: ["c"]}}})
     })
 
     test("merges components considering old and new links", () => {
@@ -52,8 +49,8 @@ describe("Rendered", () => {
       expect(rendered.get()).toEqual({
         [COMPONENTS]: {
           1: {[STATIC]: ["new"]},
-          2: {reset: true, [STATIC]: ["old"]},
-          3: {reset: true, [STATIC]: ["new"]}
+          2: {[STATIC]: ["old"]},
+          3: {[STATIC]: ["new"]}
         }
       })
     })
@@ -76,10 +73,10 @@ describe("Rendered", () => {
       expect(rendered1.get()).toEqual({
         [COMPONENTS]: {
           1: {0: {[STATIC]: ["nested"]}, [STATIC]: ["new"]},
-          2: {reset: true, 0: {[STATIC]: ["replaced"]}, [STATIC]: ["old"]},
-          3: {reset: true, 0: {[STATIC]: ["replaced"]}, [STATIC]: ["new"]},
-          4: {reset: true, 0: {[STATIC]: ["nested"]}, [STATIC]: ["old"]},
-          5: {reset: true, 0: {[STATIC]: ["nested"]}, [STATIC]: ["new"]},
+          2: {0: {[STATIC]: ["replaced"]}, [STATIC]: ["old"]},
+          3: {0: {[STATIC]: ["replaced"]}, [STATIC]: ["new"]},
+          4: {0: {[STATIC]: ["nested"]}, [STATIC]: ["old"]},
+          5: {0: {[STATIC]: ["nested"]}, [STATIC]: ["new"]},
         }
       })
 
@@ -98,10 +95,10 @@ describe("Rendered", () => {
       expect(rendered2.get()).toEqual({
         [COMPONENTS]: {
           1: {0: {[STATIC]: ["newRender"]}, [STATIC]: ["new"]},
-          2: {reset: true, 0: {[STATIC]: ["replaced"]}, [STATIC]: ["old"]},
-          3: {reset: true, 0: {[STATIC]: ["replaced"]}, [STATIC]: ["new"]},
-          4: {reset: true, 0: {[STATIC]: ["nested"]}, [STATIC]: ["old"]},
-          5: {reset: true, 0: {[STATIC]: ["newRender"]}, [STATIC]: ["new"]},
+          2: {0: {[STATIC]: ["replaced"]}, [STATIC]: ["old"]},
+          3: {0: {[STATIC]: ["replaced"]}, [STATIC]: ["new"]},
+          4: {0: {[STATIC]: ["nested"]}, [STATIC]: ["old"]},
+          5: {0: {[STATIC]: ["newRender"]}, [STATIC]: ["new"]},
         }
       })
     })
@@ -222,7 +219,7 @@ describe("Rendered", () => {
       let rendered = new Rendered("123", simpleDiffResult)
       let [str, streams] = rendered.toString()
       expect(str.trim()).toEqual(
-        `<div data-phx-id="123-1" class="thermostat">
+        `<div data-phx-id="m1-123" class="thermostat">
   <div class="bar cooling">
     <a href="#" phx-click="toggle-mode">cooling</a>
     <span>07:15:04 PM</span>
@@ -234,15 +231,15 @@ describe("Rendered", () => {
       let rendered = new Rendered("123", staticReuseDiff)
       let [str, streams] = rendered.toString()
       expect(str.trim()).toEqual(
-        `<div data-phx-id="123-1">
+        `<div data-phx-id="m1-123">
   <p>
     foo
-    <span>0: <b data-phx-id="123-c-1" data-phx-component="1">FROM index_1 world</b></span><span>1: <b data-phx-id="123-c-2" data-phx-component="2">FROM index_2 world</b></span>
+    <span>0: <b data-phx-id="c1-123" data-phx-component="1">FROM index_1 world</b></span><span>1: <b data-phx-id="c2-123" data-phx-component="2">FROM index_2 world</b></span>
   </p>
 
   <p>
     bar
-    <span>0: <b data-phx-id="123-c-3" data-phx-component="3">FROM index_1 world</b></span><span>1: <b data-phx-id="123-c-4" data-phx-component="4">FROM index_2 world</b></span>
+    <span>0: <b data-phx-id="c3-123" data-phx-component="3">FROM index_1 world</b></span><span>1: <b data-phx-id="c4-123" data-phx-component="4">FROM index_2 world</b></span>
   </p>
 </div>`.trim())
     })
