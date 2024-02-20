@@ -2350,11 +2350,11 @@ var DOMPatch = class {
     }
   }
   removeStreamChildElement(child) {
-    if (!this.maybePendingRemove(child)) {
-      if (this.streamInserts[child.id]) {
-        this.streamComponentRestore[child.id] = child;
-        child.remove();
-      } else {
+    if (this.streamInserts[child.id]) {
+      this.streamComponentRestore[child.id] = child;
+      child.remove();
+    } else {
+      if (!this.maybePendingRemove(child)) {
         child.remove();
         this.onNodeDiscarded(child);
       }
@@ -2374,6 +2374,9 @@ var DOMPatch = class {
     }
     this.setStreamRef(el, ref);
     if (!reset && !isNew) {
+      return;
+    }
+    if (!el.parentElement) {
       return;
     }
     if (streamAt === 0) {
@@ -2593,14 +2596,6 @@ var Rendered = class {
     let newc = diff[COMPONENTS];
     let cache = {};
     delete diff[COMPONENTS];
-    if (newc) {
-      let prevComponents = this.rendered[COMPONENTS] || {};
-      for (let cid in newc) {
-        if (prevComponents[cid] === void 0) {
-          newc[cid].reset = true;
-        }
-      }
-    }
     this.rendered = this.mutableMerge(this.rendered, diff);
     this.rendered[COMPONENTS] = this.rendered[COMPONENTS] || {};
     if (newc) {
@@ -2666,6 +2661,8 @@ var Rendered = class {
       let targetVal = target[key];
       if (isObject(val) && val[STATIC] === void 0 && isObject(targetVal)) {
         merged[key] = this.cloneMerge(targetVal, val, pruneMagicId);
+      } else if (val === void 0 && isObject(targetVal)) {
+        merged[key] = this.cloneMerge(targetVal, {}, pruneMagicId);
       }
     }
     if (pruneMagicId) {
@@ -2699,7 +2696,7 @@ var Rendered = class {
   }
   nextMagicID() {
     this.magicId++;
-    return `${this.parentViewId()}-${this.magicId}`;
+    return `m${this.magicId}-${this.parentViewId()}`;
   }
   toOutputBuffer(rendered, templates, output, changeTracking, rootAttrs = {}) {
     if (rendered[DYNAMICS]) {
@@ -2774,7 +2771,7 @@ var Rendered = class {
     let attrs = { [PHX_COMPONENT]: cid };
     let skip = onlyCids && !onlyCids.has(cid);
     component.newRender = !skip;
-    component.magicId = `${this.parentViewId()}-c-${cid}`;
+    component.magicId = `c${cid}-${this.parentViewId()}`;
     let changeTracking = !component.reset;
     let [html, streams] = this.recursiveToString(component, components, onlyCids, changeTracking, attrs);
     delete component.reset;
@@ -2910,7 +2907,6 @@ var View = class {
     this.childJoins = 0;
     this.loaderTimer = null;
     this.pendingDiffs = [];
-    this.pruningCIDs = [];
     this.redirect = false;
     this.href = null;
     this.joinCount = this.parent ? this.parent.joinCount - 1 : 0;
@@ -2923,7 +2919,6 @@ var View = class {
     };
     this.pendingJoinOps = this.parent ? null : [];
     this.viewHooks = {};
-    this.uploaders = {};
     this.formSubmits = [];
     this.children = this.parent ? null : {};
     this.root.children[this.id] = {};
@@ -3318,7 +3313,7 @@ var View = class {
   renderContainer(diff, kind) {
     return this.liveSocket.time(`toString diff (${kind})`, () => {
       let tag = this.el.tagName;
-      let cids = diff ? this.rendered.componentCIDs(diff).concat(this.pruningCIDs) : null;
+      let cids = diff ? this.rendered.componentCIDs(diff) : null;
       let [html, streams] = this.rendered.toString(cids);
       return [`<${tag}>${html}</${tag}>`, streams];
     });
@@ -3837,8 +3832,11 @@ var View = class {
           onComplete();
         }
       });
-      this.uploaders[inputEl] = uploader;
       let entries = uploader.entries().map((entry) => entry.toPreflightPayload());
+      if (entries.length === 0) {
+        numFileInputsInProgress--;
+        return;
+      }
       let payload = {
         ref: inputEl.getAttribute(PHX_UPLOAD_REF),
         entries,
@@ -3940,10 +3938,9 @@ var View = class {
     }).filter(([form, newForm, newCid]) => newForm);
   }
   maybePushComponentsDestroyed(destroyedCIDs) {
-    let willDestroyCIDs = destroyedCIDs.concat(this.pruningCIDs).filter((cid) => {
+    let willDestroyCIDs = destroyedCIDs.filter((cid) => {
       return dom_default.findComponentNodeList(this.el, cid).length === 0;
     });
-    this.pruningCIDs = willDestroyCIDs.concat([]);
     if (willDestroyCIDs.length > 0) {
       willDestroyCIDs.forEach((cid) => this.rendered.resetRender(cid));
       this.pushWithReply(null, "cids_will_destroy", { cids: willDestroyCIDs }, () => {
@@ -3952,7 +3949,6 @@ var View = class {
         });
         if (completelyDestroyCIDs.length > 0) {
           this.pushWithReply(null, "cids_destroyed", { cids: completelyDestroyCIDs }, (resp) => {
-            this.pruningCIDs = this.pruningCIDs.filter((cid) => resp.cids.indexOf(cid) === -1);
             this.rendered.pruneCIDs(resp.cids);
           });
         }

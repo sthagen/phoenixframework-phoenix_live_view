@@ -120,7 +120,6 @@ export default class View {
     this.childJoins = 0
     this.loaderTimer = null
     this.pendingDiffs = []
-    this.pruningCIDs = []
     this.redirect = false
     this.href = null
     this.joinCount = this.parent ? this.parent.joinCount - 1 : 0
@@ -130,7 +129,6 @@ export default class View {
     this.stopCallback = function(){ }
     this.pendingJoinOps = this.parent ? null : []
     this.viewHooks = {}
-    this.uploaders = {}
     this.formSubmits = []
     this.children = this.parent ? null : {}
     this.root.children[this.id] = {}
@@ -560,7 +558,7 @@ export default class View {
       let tag = this.el.tagName
       // Don't skip any component in the diff nor any marked as pruned
       // (as they may have been added back)
-      let cids = diff ? this.rendered.componentCIDs(diff).concat(this.pruningCIDs) : null
+      let cids = diff ? this.rendered.componentCIDs(diff) : null
       let [html, streams] = this.rendered.toString(cids)
       return [`<${tag}>${html}</${tag}>`, streams]
     })
@@ -1065,8 +1063,12 @@ export default class View {
         if(numFileInputsInProgress === 0){ onComplete() }
       });
 
-      this.uploaders[inputEl] = uploader
       let entries = uploader.entries().map(entry => entry.toPreflightPayload())
+
+      if (entries.length === 0) {
+        numFileInputsInProgress--
+        return
+      }
 
       let payload = {
         ref: inputEl.getAttribute(PHX_UPLOAD_REF),
@@ -1183,11 +1185,9 @@ export default class View {
   }
 
   maybePushComponentsDestroyed(destroyedCIDs){
-    let willDestroyCIDs = destroyedCIDs.concat(this.pruningCIDs).filter(cid => {
+    let willDestroyCIDs = destroyedCIDs.filter(cid => {
       return DOM.findComponentNodeList(this.el, cid).length === 0
     })
-    // make sure this is a copy and not a reference
-    this.pruningCIDs = willDestroyCIDs.concat([])
 
     if(willDestroyCIDs.length > 0){
       // we must reset the render change tracking for cids that
@@ -1203,7 +1203,6 @@ export default class View {
 
         if(completelyDestroyCIDs.length > 0){
           this.pushWithReply(null, "cids_destroyed", {cids: completelyDestroyCIDs}, (resp) => {
-            this.pruningCIDs = this.pruningCIDs.filter(cid => resp.cids.indexOf(cid) === -1)
             this.rendered.pruneCIDs(resp.cids)
           })
         }

@@ -432,9 +432,23 @@ defmodule Phoenix.LiveViewTest.DOM do
     {tag, attrs, new_children}
   end
 
-  defp apply_phx_update("ignore", _state, node, _streams) do
-    verify_phx_update_id!("ignore", attribute(node, "id"), node)
-    node
+  defp apply_phx_update("ignore", html_tree, node, _streams) do
+    container_id = attribute(node, "id")
+    verify_phx_update_id!("ignore", container_id, node)
+
+    {new_tag, new_attrs, new_children} = node
+
+    {tag, attrs_before, children_before} =
+      case by_id(html_tree, container_id) do
+        {_tag, _attrs_before, _children_before} = triplet -> triplet
+        nil -> {new_tag, new_attrs, new_children}
+      end
+
+    merged_attrs =
+      Enum.reject(attrs_before, fn {name, _} -> String.starts_with?(name, "data-") end) ++
+        Enum.filter(new_attrs, fn {name, _} -> String.starts_with?(name, "data-") end)
+
+    {tag, merged_attrs, children_before}
   end
 
   defp apply_phx_update(type, _state, node, _streams) when type in [nil, "replace"] do
