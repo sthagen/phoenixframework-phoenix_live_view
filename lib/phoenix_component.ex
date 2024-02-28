@@ -528,8 +528,10 @@ defmodule Phoenix.Component do
   are enabled:
 
   ```html
+  <!-- @caller lib/app_web/home_live.ex:20 -->
   <!-- <AppWeb.CoreComponents.header> lib/app_web/core_components.ex:123 -->
   <header class="p-5">
+    <!-- @caller lib/app_web/home_live.ex:48 -->
     <!-- <AppWeb.CoreComponents.button> lib/app_web/core_components.ex:456 -->
     <button class="px-2 bg-indigo-500 text-white">Click</button>
     <!-- </AppWeb.CoreComponents.button> -->
@@ -1179,17 +1181,26 @@ defmodule Phoenix.Component do
 
   ### When connected
 
-  LiveView is also able to share assigns via `assign_new` within nested LiveView. If the parent
-  LiveView defines a `:current_user` assign and the child LiveView also uses `assign_new/3` to
-  fetch the `:current_user` in its `mount/3` callback, as above, the assign will be fetched from
-  the parent LiveView, once again avoiding additional database queries.
+  LiveView is also able to share assigns via `assign_new` with children LiveViews,
+  as long as the child LiveView is also mounted when the parent LiveView is mounted.
+  Let's see an example.
+
+  If the parent LiveView defines a `:current_user` assign and the child LiveView also
+  uses `assign_new/3` to fetch the `:current_user` in its `mount/3` callback, as in
+  the previous subsection, the assign will be fetched from the parent LiveView, once
+  again avoiding additional database queries.
 
   Note that `fun` also provides access to the previously assigned values:
 
       assigns =
-          assigns
-          |> assign_new(:foo, fn -> "foo" end)
-          |> assign_new(:bar, fn %{foo: foo} -> foo <> "bar" end)
+        assigns
+        |> assign_new(:foo, fn -> "foo" end)
+        |> assign_new(:bar, fn %{foo: foo} -> foo <> "bar" end)
+
+  Assigns sharing is performed when possible but not guaranteed. Therefore, you must
+  ensure the result of the function given to `assign_new/3` is the same as if the value
+  was fetched from the parent. Otherwise consider passing values to the child LiveView
+  as part of its session.
   '''
   def assign_new(socket_or_assigns, key, fun)
 
