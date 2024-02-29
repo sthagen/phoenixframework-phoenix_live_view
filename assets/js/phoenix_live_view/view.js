@@ -1037,7 +1037,12 @@ export default class View {
     } else if(LiveUploader.inputsAwaitingPreflight(formEl).length > 0){
       let [ref, els] = refGenerator()
       let proxyRefGen = () => [ref, els, opts]
-      this.uploadFiles(formEl, targetCtx, ref, cid, (_uploads) => {
+      this.uploadFiles(formEl, targetCtx, ref, cid, (uploads) => {
+        // if we still having pending preflights it means we have invalid entries
+        // and the phx-submit cannot be completed
+        if(LiveUploader.inputsAwaitingPreflight(formEl).length > 0){
+          return this.undoRefs(ref)
+        }
         let meta = this.extractMeta(formEl)
         let formData = serializeForm(formEl, {submitter, ...meta})
         this.pushWithReply(proxyRefGen, "event", {
@@ -1073,7 +1078,7 @@ export default class View {
 
       let entries = uploader.entries().map(entry => entry.toPreflightPayload())
 
-      if (entries.length === 0) {
+      if(entries.length === 0) {
         numFileInputsInProgress--
         return
       }
@@ -1088,10 +1093,21 @@ export default class View {
 
       this.pushWithReply(null, "allow_upload", payload, resp => {
         this.log("upload", () => ["got preflight response", resp])
-        if(resp.error){
+        // the preflight will reject entries beyond the max entries
+        // so we error and cancel entries on the client that are missing from the response
+        uploader.entries().forEach(entry => {
+          if(resp.entries && !resp.entries[entry.ref]){
+            this.handleFailedEntryPreflight(entry.ref, "failed preflight", uploader)
+          }
+        })
+        // for auto uploas, we may have an empty entries response from the server
+        // for form submits that contain invalid entries
+        if(resp.error || Object.keys(resp.entries).length === 0){
           this.undoRefs(ref)
-          let [entry_ref, reason] = resp.error
-          this.log("upload", () => [`error for entry ${entry_ref}`, reason])
+          let errors = resp.error || []
+          errors.map(([entry_ref, reason]) => {
+            this.handleFailedEntryPreflight(entry_ref, reason, uploader)
+          })
         } else {
           let onError = (callback) => {
             this.channel.onError(() => {
@@ -1102,6 +1118,17 @@ export default class View {
         }
       })
     })
+  }
+
+  handleFailedEntryPreflight(uploadRef, reason, uploader){
+    if(uploader.isAutoUpload()){
+      // uploadRef may be top level upload config ref or entry ref
+      let entry = uploader.entries().find(entry => entry.ref === uploadRef.toString())
+      if(entry){ entry.cancel() }
+    } else {
+      uploader.entries().map(entry => entry.cancel())
+    }
+    this.log("upload", () => [`error for entry ${uploadRef}`, reason])
   }
 
   dispatchUploads(targetCtx, name, filesOrBlobs){
