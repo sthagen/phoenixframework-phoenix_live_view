@@ -1,11 +1,17 @@
 # Changelog
 
-## 0.20.13
+## 0.20.13 (2024-03-12)
+
+### Bug fixes
+  * Fix LiveComponent rendering bug causing elements to disappear when a LiveComponent child is removed and added back by the server
 
 ### Enhancements
   * Warn when accessing the socket in a function passed to assign_async / start_async
 
 ## 0.20.12 (2024-03-04)
+
+### Enhancements
+  * Phoenix LiveView requires Elixir v1.13+
 
 ### Bug fixes
   * Do not send Telemetry metadata as Logger event, this avoids the metadata from being accidentally copied to other processes
