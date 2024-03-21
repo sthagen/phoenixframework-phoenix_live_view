@@ -480,7 +480,6 @@ let DOM = {
     if(!DOM.isTextualInput(focused)){ return }
 
     let wasFocused = focused.matches(":focus")
-    if(focused.readOnly){ focused.blur() }
     if(!wasFocused){ focused.focus() }
     if(this.hasSelectionRange(focused)){
       focused.setSelectionRange(selectionStart, selectionEnd)
@@ -527,7 +526,7 @@ let DOM = {
         if(!childNode.id){
           // Skip warning if it's an empty text node (e.g. a new-line)
           let isEmptyTextNode = childNode.nodeType === Node.TEXT_NODE && childNode.nodeValue.trim() === ""
-          if(!isEmptyTextNode){
+          if(!isEmptyTextNode && childNode.nodeType !== Node.COMMENT_NODE){
             logError("only HTML element tags with an id are allowed inside containers with phx-update.\n\n" +
               `removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"\n\n`)
           }
