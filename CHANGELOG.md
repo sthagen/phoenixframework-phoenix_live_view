@@ -5,6 +5,15 @@
 ### Removal of previously deprecated functionality
   * `live_component/2` and `live_component/3` helpers (not the function component) have been removed
 
+### Bug fixes
+  * Fix attributes of stream items are being updated on reset
+  * Fix nested LiveView within streams becoming empty when reset
+  * Fix `phx-mounted` firing duplicate times, first on dead render, then on live render, leading to errors when a LiveComponent has not yet mounted
+  * Fix `JS.toggle_class` type error
+
+### Enhancements
+  * Warn on mismatched client and server versions
+
 ## 0.20.14 (2024-03-13)
 
 ### Bug fixes
