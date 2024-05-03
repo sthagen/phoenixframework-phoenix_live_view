@@ -17,6 +17,8 @@ Application.put_env(:phoenix_live_view, Phoenix.LiveViewTest.E2E.Endpoint,
   debug_errors: false
 )
 
+Process.register(self(), :e2e_helper)
+
 defmodule Phoenix.LiveViewTest.E2E.ErrorHTML do
   def render(template, _), do: Phoenix.Controller.status_message_from_template(template)
 end
@@ -28,10 +30,11 @@ defmodule Phoenix.LiveViewTest.E2E.Layout do
     ~H"""
     <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()} />
     <script src="/assets/phoenix/phoenix.min.js"></script>
-    <script src="/assets/phoenix_live_view/phoenix_live_view.js"></script>
-    <script>
+    <script type="module">
+      import {LiveSocket} from "/assets/phoenix_live_view/phoenix_live_view.esm.js"
+
       let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-      let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {params: {_csrf_token: csrfToken}})
+      let liveSocket = new LiveSocket("/live", window.Phoenix.Socket, {params: {_csrf_token: csrfToken}})
       liveSocket.connect()
       window.liveSocket = liveSocket
     </script>
@@ -68,7 +71,6 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
       live "/upload", E2E.UploadLive
       live "/form", E2E.FormLive
       live "/form/dynamic-inputs", E2E.FormDynamicInputsLive
-      live "/form/feedback", E2E.FormFeedbackLive
       live "/js", E2E.JsLive
     end
 
@@ -92,13 +94,17 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
   end
 
   # these routes use a custom layout and therefore cannot be in the live_session
-  scope "/issues", Phoenix.LiveViewTest.E2E do
+  scope "/", Phoenix.LiveViewTest.E2E do
     pipe_through(:browser)
 
-    live "/2965", Issue2965Live
-    live "/3047/a", Issue3047ALive
-    live "/3047/b", Issue3047BLive
-    live "/3169", Issue3169Live
+    live "/form/feedback", FormFeedbackLive
+
+    scope "/issues" do
+      live "/2965", Issue2965Live
+      live "/3047/a", Issue3047ALive
+      live "/3047/b", Issue3047BLive
+      live "/3169", Issue3169Live
+    end
   end
 end
 
@@ -119,6 +125,7 @@ defmodule Phoenix.LiveViewTest.E2E.Endpoint do
   plug Plug.Static, from: System.tmp_dir!(), at: "/tmp"
 
   plug :health_check
+  plug :halt
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
@@ -133,6 +140,14 @@ defmodule Phoenix.LiveViewTest.E2E.Endpoint do
   end
 
   defp health_check(conn, _opts), do: conn
+
+  defp halt(%{request_path: "/halt"}, _opts) do
+    send(:e2e_helper, :halt)
+    # this ensure playwright waits until the server force stops
+    Process.sleep(:infinity)
+  end
+
+  defp halt(conn, _opts), do: conn
 end
 
 {:ok, _} =
@@ -145,4 +160,16 @@ end
   )
 
 IO.puts "Starting e2e server on port #{Phoenix.LiveViewTest.E2E.Endpoint.config(:http)[:port]}"
-Process.sleep(:infinity)
+
+unless IEx.started?() do
+  # when running the test server manually, we halt after
+  # reading from stdin
+  spawn(fn ->
+    IO.read(:stdio, :line)
+    send(:e2e_helper, :halt)
+  end)
+
+  receive do
+    :halt -> :ok
+  end
+end
