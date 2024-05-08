@@ -767,7 +767,7 @@ defmodule Phoenix.Component do
   ```heex
   <.table id="my-table" rows={@users}>
     <:col :for={header <- @headers} :let={user}>
-      <td><%= user[:header] %></td>
+      <td><%= user[header] %></td>
     </:col>
   <table>
   ```
@@ -1149,7 +1149,7 @@ defmodule Phoenix.Component do
   ## Sharing assigns
 
   It is possible to share assigns between the Plug pipeline and LiveView on disconnected render
-  and between LiveViews when connected.
+  and between parent-child LiveViews when connected.
 
   ### When disconnected
 
