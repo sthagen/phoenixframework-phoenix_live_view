@@ -80,7 +80,7 @@ defmodule Phoenix.LiveView do
 
   ### Async assigns
 
-  The `assign_async/3` function takes a name, a list of keys which will be assigned
+  The `assign_async/3` function takes the socket, a key or list of keys which will be assigned
   asynchronously, and a function. This function will be wrapped in a `task` by
   `assign_async`, making it easy for you to return the result. This function must
   return an `{:ok, assigns}` or `{:error, reason}` tuple, where `assigns` is a map
@@ -167,7 +167,7 @@ defmodule Phoenix.LiveView do
   `start_async/3` is used to fetch the organization asynchronously. The
   `c:handle_async/3` callback is called when the task completes or exits,
   with the results wrapped in either `{:ok, result}` or `{:exit, reason}`.
-  The `AsyncResult` module is used to directly to update the state of the
+  The `AsyncResult` module provides functions to update the state of the
   async operation, but you can also assign any value directly to the socket
   if you want to handle the state yourself.
 
@@ -1995,7 +1995,7 @@ defmodule Phoenix.LiveView do
   the key passed to `start_async/3`.
 
   The underlying process will be killed with the provided reason, or
-  `{:shutdown, :cancel}`. if no reason is passed. For `assign_async/3`
+  with `{:shutdown, :cancel}` if no reason is passed. For `assign_async/3`
   operations, the `:failed` field will be set to `{:exit, reason}`.
   For `start_async/3`, the `c:handle_async/3` callback will receive
   `{:exit, reason}` as the result.
