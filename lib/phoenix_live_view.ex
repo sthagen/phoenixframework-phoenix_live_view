@@ -349,12 +349,12 @@ defmodule Phoenix.LiveView do
     * `:global_prefixes` - the global prefixes to use for components. See
       `Global Attributes` in `Phoenix.Component` for more information.
 
-    * `:layout` - configures the layout the `LiveView` will be rendered in.
+    * `:layout` - configures the layout the LiveView will be rendered in.
       This layout can be overridden by on `c:mount/3` or via the `:layout`
       option in `Phoenix.LiveView.Router.live_session/2`
 
-    * `:log` - configures the log level for the `LiveView`, either false
-      or a Log level
+    * `:log` - configures the log level for the LiveView, either `false`
+      or a log level
 
   """
 
@@ -411,11 +411,11 @@ defmodule Phoenix.LiveView do
     * `:container` - an optional tuple for the HTML tag and DOM attributes to
       be used for the LiveView container. For example: `{:li, style: "color: blue;"}`.
 
-    * `:layout` - configures the layout the `LiveView` will be rendered in.
+    * `:layout` - configures the layout the LiveView will be rendered in.
       This layout can be overridden by on `c:mount/3` or via the `:layout`
       option in `Phoenix.LiveView.Router.live_session/2`
 
-    * `:log` - configures the log level for the `LiveView`, either false
+    * `:log` - configures the log level for the LiveView, either `false`
       or a log level
 
     * `:on_mount` - a list of tuples with module names and argument to be invoked
@@ -1464,6 +1464,9 @@ defmodule Phoenix.LiveView do
   Replying to a client event:
 
       # JavaScript:
+      # /**
+      #  * @type {Object.<string, import("phoenix_live_view").ViewHook>}
+      #  */
       # let Hooks = {}
       # Hooks.ClientHook = {
       #   mounted() {
@@ -1610,8 +1613,12 @@ defmodule Phoenix.LiveView do
        along with a unique DOM id.
     2. Each stream item must include its DOM id on the item's element.
 
-  > **Note**: Failing to place `phx-update="stream"` on the **immediate parent** for
+  > #### Note {: .warning}
+  > Failing to place `phx-update="stream"` on the **immediate parent** for
   > **each stream** will result in broken behavior.
+  >
+  > Also, do not alter the generated DOM ids, e.g., by prefixing them. Doing so will
+  > result in broken behavior.
 
   When consuming a stream in a template, the DOM id and item is passed as a tuple,
   allowing convenient inclusion of the DOM id for each item. For example:
@@ -1629,12 +1636,56 @@ defmodule Phoenix.LiveView do
     </tbody>
   </table>
   ```
+
   We consume the stream in a for comprehension by referencing the
   `@streams.songs` assign. We used the computed DOM id to populate
   the `<tr>` id, then we render the table row as usual.
 
   Now `stream_insert/3` and `stream_delete/3` may be issued and new rows will
   be inserted or deleted from the client.
+
+  ## Handling the empty case
+
+  When rendering a list of items, it is common to show a message for the empty case.
+  But when using streams, we cannot rely on `Enum.empty?/1` or similar approaches to
+  check if the list is empty. Instead we can use the CSS `:only-child` selector
+  and show the message client side:
+
+  ```heex
+  <table>
+    <tbody id="songs" phx-update="stream">
+      <tr id="songs-empty" class="only:block hidden">
+        <td colspan="2">No songs found</td>
+      </tr>
+      <tr
+        :for={{dom_id, song} <- @streams.songs}
+        id={dom_id}
+      >
+        <td><%= song.title %></td>
+        <td><%= song.duration %></td>
+      </tr>
+    </tbody>
+  </table>
+  ```
+
+  ## Non-stream items in stream containers
+
+  In the section on handling the empty case, we showed how to render a message when
+  the stream is empty by rendering a non-stream item inside the stream container.
+
+  Note that for non-stream items inside a `phx-update="stream"` container, the following
+  needs to be considered:
+
+    1. Items can be added and updated, but not removed, even if the stream is reset.
+
+  This means that if you try to conditionally render a non-stream item inside a stream container,
+  it won't be removed if it was rendered once.
+
+    2. Items are affected by the `:at` option.
+
+  For example, when you render a non-stream item at the beginning of the stream container and then
+  prepend items (with `at: 0`) to the stream, the non-stream item will be pushed down.
+
   """
   @spec stream(%Socket{}, name :: atom | String.t(), items :: Enumerable.t(), opts :: Keyword.t()) ::
           %Socket{}

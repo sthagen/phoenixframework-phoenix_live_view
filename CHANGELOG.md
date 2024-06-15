@@ -119,6 +119,9 @@ generated user module:
 ### Deprecations
   * Deprecate `live_flash` in favor of `Phoenix.Flash.get`
   * Deprecate `push_redirect` in favor of `push_navigate`
+  
+### Removal of previously deprecated functionality
+  * `phx-capture-click` has been removed (deprecated in 0.17.0)
 
 ## 1.0.0-rc.0 🚀 (2024-05-08)
 
@@ -414,7 +417,7 @@ generated user module:
 ### Enhancements
   * Support [`submitter`](https://developer.mozilla.org/en-US/docs/Web/API/SubmitEvent/submitter) on form submit events.
   * Avoid compile-time dependency for `attr` when referencing structs
-  * Validate reserved assigns. Attempting to assign `:uploads`, `:streams`, `:live_action`, `:socket`, `:myself` will now raise in `LiveView` and `LiveComponent`
+  * Validate reserved assigns. Attempting to assign `:uploads`, `:streams`, `:live_action`, `:socket`, `:myself` will now raise in LiveView and LiveComponent
 
 ## 0.18.16 (2023-02-23)
 
@@ -1675,7 +1678,7 @@ let liveSocket = new LiveSocket("/live", Socket, {...})
 
 ### Backwards incompatible changes
   - `phx-value` has no effect, use `phx-value-*` instead
-  - The `:path_params` key in session has no effect (use `handle_params` in `LiveView` instead)
+  - The `:path_params` key in session has no effect (use `handle_params` in LiveView instead)
 
 ## 0.1.1 (2019-08-27)
 
