@@ -1015,11 +1015,20 @@ var LiveView = (() => {
         return true;
       }
       let refSrc = fromEl.getAttribute(PHX_REF_SRC);
-      if (DOM.isUploadInput(fromEl)) {
-        DOM.mergeAttrs(fromEl, toEl, { isIgnored: true });
+      if (DOM.isFormInput(fromEl) || fromEl.getAttribute(disableWith) !== null) {
+        if (DOM.isUploadInput(fromEl)) {
+          DOM.mergeAttrs(fromEl, toEl, { isIgnored: true });
+        }
+        DOM.putPrivate(fromEl, PHX_REF, toEl);
+        return false;
+      } else {
+        PHX_EVENT_CLASSES.forEach((className) => {
+          fromEl.classList.contains(className) && toEl.classList.add(className);
+        });
+        toEl.setAttribute(PHX_REF, ref);
+        toEl.setAttribute(PHX_REF_SRC, refSrc);
+        return true;
       }
-      DOM.putPrivate(fromEl, PHX_REF, toEl);
-      return false;
     },
     cleanChildNodes(container, phxUpdate) {
       if (DOM.isPhxUpdate(container, phxUpdate, ["append", "prepend"])) {
@@ -4125,7 +4134,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       });
     }
     version() {
-      return "1.0.0-rc.1";
+      return "1.0.0-rc.2";
     }
     isProfileEnabled() {
       return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true";
