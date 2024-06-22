@@ -108,6 +108,26 @@ generated user module:
      if valid_password?(changeset.data, password) do
 ```
 
+## 1.0.0-rc.5 (2024-06-21)
+
+### Bug fixes
+  * Fix form recovery when targeting LiveComponents
+  * Fix formatter incorrectly formatting script tags
+  * Fix client version mismatch warning for rc.3
+
+## 1.0.0-rc.4 (2024-06-20)
+
+### Bug fixes
+  * Fix bug allowing focused input to be overwritten on acknowledgement
+
+## 1.0.0-rc.3 (2024-06-20)
+
+### Bug fixes
+  * Fix issue where locked data-phx-ref containers would still be patched in some cases
+  * Fix issue where locked data-phx-ref containers would fail to have pending updates like streams applied after acknowledgment
+  * Fix issue where a LiveComponent issuing live navigation sends an acknowledgement too early before its parent LiveView handle_params diff is sent
+  * Fix issue allowing phx-remove elements to remain interactive while transitioning out from the page
+
 ## 1.0.0-rc.2 (2024-06-19)
 
 ### Bug fixes
@@ -154,6 +174,11 @@ generated user module:
 
 ### Enhancements
   * Warn on mismatched client and server versions
+
+## 0.20.16 (2024-06-20)
+
+### Bug fixes
+* Fix bug introduced in 0.20.15 causing incorrect patching on form elements when awaiting acknowledgements
 
 ## 0.20.15 (2024-06-18)
 
