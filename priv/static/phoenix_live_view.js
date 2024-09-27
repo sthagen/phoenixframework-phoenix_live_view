@@ -1406,7 +1406,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         if (this.preflightedWas !== newPreflights) {
           this.preflightedWas = newPreflights;
           if (newPreflights === "") {
-            this.__view.cancelSubmit(this.el.form);
+            this.__view().cancelSubmit(this.el.form);
           }
         }
         if (this.activeRefs() === "") {
@@ -1471,15 +1471,15 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
   };
   var isAtViewportTop = (el, scrollContainer) => {
     let rect = el.getBoundingClientRect();
-    return rect.top >= top(scrollContainer) && rect.left >= 0 && rect.top <= bottom(scrollContainer);
+    return Math.ceil(rect.top) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.top) <= bottom(scrollContainer);
   };
   var isAtViewportBottom = (el, scrollContainer) => {
     let rect = el.getBoundingClientRect();
-    return rect.right >= top(scrollContainer) && rect.left >= 0 && rect.bottom <= bottom(scrollContainer);
+    return Math.ceil(rect.bottom) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.bottom) <= bottom(scrollContainer);
   };
   var isWithinViewport = (el, scrollContainer) => {
     let rect = el.getBoundingClientRect();
-    return rect.top >= top(scrollContainer) && rect.left >= 0 && rect.top <= bottom(scrollContainer);
+    return Math.ceil(rect.top) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.top) <= bottom(scrollContainer);
   };
   Hooks.InfiniteScroll = {
     mounted() {
@@ -3520,10 +3520,11 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       return this.root.children[this.id][id];
     }
     getDescendentByEl(el) {
+      var _a;
       if (el.id === this.id) {
         return this;
       } else {
-        return this.children[el.getAttribute(PHX_PARENT_ID)][el.id];
+        return (_a = this.children[el.getAttribute(PHX_PARENT_ID)]) == null ? void 0 : _a[el.id];
       }
     }
     destroyDescendent(id) {
@@ -3705,6 +3706,10 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     joinDead() {
       this.isDead = true;
     }
+    joinPush() {
+      this.joinPush = this.joinPush || this.channel.join();
+      return this.joinPush;
+    }
     join(callback) {
       this.showLoader(this.liveSocket.loaderTimeout);
       this.bindChannel();
@@ -3716,12 +3721,10 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         };
         callback ? callback(this.joinCount, onDone) : onDone();
       };
-      this.liveSocket.wrapPush(this, { timeout: false }, () => {
-        return this.channel.join().receive("ok", (data) => {
-          if (!this.isDestroyed()) {
-            this.liveSocket.requestDOMUpdate(() => this.onJoin(data));
-          }
-        }).receive("error", (resp) => !this.isDestroyed() && this.onJoinError(resp)).receive("timeout", () => !this.isDestroyed() && this.onJoinError({ reason: "timeout" }));
+      this.wrapPush(() => this.channel.join(), {
+        ok: (resp) => this.liveSocket.requestDOMUpdate(() => this.onJoin(resp)),
+        error: (error) => this.onJoinError(error),
+        timeout: () => this.onJoinError({ reason: "timeout" })
       });
     }
     onJoinError(resp) {
@@ -3791,12 +3794,19 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       this.setContainerClasses(...classes);
       this.execAll(this.binding("disconnected"));
     }
-    pushWithReply(refGenerator, event, payload, onReply = function() {
-    }) {
+    wrapPush(callerPush, receives) {
+      let latency = this.liveSocket.getLatencySim();
+      let withLatency = latency ? (cb) => setTimeout(() => !this.isDestroyed() && cb(), latency) : (cb) => !this.isDestroyed() && cb();
+      withLatency(() => {
+        callerPush().receive("ok", (resp) => withLatency(() => receives.ok && receives.ok(resp))).receive("error", (reason) => withLatency(() => receives.error && receives.error(reason))).receive("timeout", () => withLatency(() => receives.timeout && receives.timeout()));
+      });
+    }
+    pushWithReply(refGenerator, event, payload) {
       if (!this.isConnected()) {
-        return;
+        return Promise.reject({ error: "noconnection" });
       }
       let [ref, [el], opts] = refGenerator ? refGenerator() : [null, [], {}];
+      let oldJoinCount = this.joinCount;
       let onLoadingDone = function() {
       };
       if (opts.page_loading || el && el.getAttribute(this.binding(PHX_PAGE_LOADING)) !== null) {
@@ -3805,39 +3815,50 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       if (typeof payload.cid !== "number") {
         delete payload.cid;
       }
-      return this.liveSocket.wrapPush(this, { timeout: true }, () => {
-        return this.channel.push(event, payload, PUSH_TIMEOUT).receive("ok", (resp) => {
-          if (ref !== null) {
-            this.lastAckRef = ref;
-          }
-          let finish = (hookReply) => {
-            if (resp.redirect) {
-              this.onRedirect(resp.redirect);
-            }
-            if (resp.live_patch) {
-              this.onLivePatch(resp.live_patch);
-            }
-            if (resp.live_redirect) {
-              this.onLiveRedirect(resp.live_redirect);
-            }
-            onLoadingDone();
-            onReply(resp, hookReply);
-          };
-          if (resp.diff) {
-            this.liveSocket.requestDOMUpdate(() => {
-              this.applyDiff("update", resp.diff, ({ diff, reply, events }) => {
-                if (ref !== null) {
-                  this.undoRefs(ref, payload.event);
-                }
-                this.update(diff, events);
-                finish(reply);
-              });
-            });
-          } else {
+      return new Promise((resolve, reject) => {
+        this.wrapPush(() => this.channel.push(event, payload, PUSH_TIMEOUT), {
+          ok: (resp) => {
             if (ref !== null) {
-              this.undoRefs(ref, payload.event);
+              this.lastAckRef = ref;
             }
-            finish(null);
+            let finish = (hookReply) => {
+              if (resp.redirect) {
+                this.onRedirect(resp.redirect);
+              }
+              if (resp.live_patch) {
+                this.onLivePatch(resp.live_patch);
+              }
+              if (resp.live_redirect) {
+                this.onLiveRedirect(resp.live_redirect);
+              }
+              onLoadingDone();
+              resolve({ resp, reply: hookReply });
+            };
+            if (resp.diff) {
+              this.liveSocket.requestDOMUpdate(() => {
+                this.applyDiff("update", resp.diff, ({ diff, reply, events }) => {
+                  if (ref !== null) {
+                    this.undoRefs(ref, payload.event);
+                  }
+                  this.update(diff, events);
+                  finish(reply);
+                });
+              });
+            } else {
+              if (ref !== null) {
+                this.undoRefs(ref, payload.event);
+              }
+              finish(null);
+            }
+          },
+          error: (reason) => reject({ error: reason }),
+          timeout: () => {
+            reject({ timeout: true });
+            if (this.joinCount === oldJoinCount) {
+              this.liveSocket.reloadWithJitter(this, () => {
+                this.log("timeout", () => ["received timeout while communicating with server. Falling back to hard refresh for recovery"]);
+              });
+            }
           }
         });
       });
@@ -3996,7 +4017,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         event,
         value: payload,
         cid: this.closestComponentID(targetCtx)
-      }, (resp, reply) => onReply(reply, ref));
+      }).then(({ resp: _resp, reply: hookReply }) => onReply(hookReply, ref));
       return ref;
     }
     extractMeta(el, meta, value) {
@@ -4035,7 +4056,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         event: phxEvent,
         value: this.extractMeta(el, meta, opts.value),
         cid: this.targetComponentID(el, targetCtx, opts)
-      }, (resp, reply) => onReply && onReply(reply));
+      }).then(({ resp, reply }) => onReply && onReply(reply));
     }
     pushFileProgress(fileEl, entryRef, progress, onReply = function() {
     }) {
@@ -4046,7 +4067,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           entry_ref: entryRef,
           progress,
           cid: view.targetComponentID(fileEl.form, targetCtx)
-        }, onReply);
+        }).then(({ resp }) => onReply(resp));
       });
     }
     pushInput(inputEl, targetCtx, forceCid, phxEvent, opts, callback) {
@@ -4082,7 +4103,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         uploads,
         cid
       };
-      this.pushWithReply(refGenerator, "event", event, (resp) => {
+      this.pushWithReply(refGenerator, "event", event).then(({ resp }) => {
         if (dom_default.isUploadInput(inputEl) && dom_default.isAutoUpload(inputEl)) {
           if (LiveUploader.filesAwaitingPreflight(inputEl).length > 0) {
             let [ref, _els] = refGenerator();
@@ -4182,7 +4203,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
             event: phxEvent,
             value: formData,
             cid
-          }, onReply);
+          }).then(({ resp }) => onReply(resp));
         });
       } else if (!(formEl.hasAttribute(PHX_REF_SRC) && formEl.classList.contains("phx-submit-loading"))) {
         let meta = this.extractMeta(formEl);
@@ -4192,7 +4213,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           event: phxEvent,
           value: formData,
           cid
-        }, onReply);
+        }).then(({ resp }) => onReply(resp));
       }
     }
     uploadFiles(formEl, phxEvent, targetCtx, ref, cid, onComplete) {
@@ -4217,7 +4238,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           cid: this.targetComponentID(inputEl.form, targetCtx)
         };
         this.log("upload", () => ["sending preflight request", payload]);
-        this.pushWithReply(null, "allow_upload", payload, (resp) => {
+        this.pushWithReply(null, "allow_upload", payload).then(({ resp }) => {
           this.log("upload", () => ["got preflight response", resp]);
           uploader.entries().forEach((entry) => {
             if (resp.entries && !resp.entries[entry.ref]) {
@@ -4302,7 +4323,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       let refGen = targetEl ? () => this.putRef([{ el: targetEl, loading: true, lock: true }], null, "click") : null;
       let fallback = () => this.liveSocket.redirect(window.location.href);
       let url = href.startsWith("/") ? `${location.protocol}//${location.host}${href}` : href;
-      let push = this.pushWithReply(refGen, "live_patch", { url }, (resp) => {
+      this.pushWithReply(refGen, "live_patch", { url }).then(({ resp }) => {
         this.liveSocket.requestDOMUpdate(() => {
           if (resp.link_redirect) {
             this.liveSocket.replaceMain(href, null, callback, linkRef);
@@ -4314,12 +4335,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
             callback && callback(linkRef);
           }
         });
-      });
-      if (push) {
-        push.receive("timeout", fallback);
-      } else {
-        fallback();
-      }
+      }, ({ error: _error, timeout: _timeout }) => fallback());
     }
     getFormsForRecovery() {
       if (this.joinCount === 0) {
@@ -4337,13 +4353,13 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       });
       if (willDestroyCIDs.length > 0) {
         willDestroyCIDs.forEach((cid) => this.rendered.resetRender(cid));
-        this.pushWithReply(null, "cids_will_destroy", { cids: willDestroyCIDs }, () => {
+        this.pushWithReply(null, "cids_will_destroy", { cids: willDestroyCIDs }).then(() => {
           this.liveSocket.requestDOMUpdate(() => {
             let completelyDestroyCIDs = willDestroyCIDs.filter((cid) => {
               return dom_default.findComponentNodeList(this.el, cid).length === 0;
             });
             if (completelyDestroyCIDs.length > 0) {
-              this.pushWithReply(null, "cids_destroyed", { cids: completelyDestroyCIDs }, (resp) => {
+              this.pushWithReply(null, "cids_destroyed", { cids: completelyDestroyCIDs }).then(({ resp }) => {
                 this.rendered.pruneCIDs(resp.cids);
               });
             }
@@ -4560,36 +4576,6 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           setTimeout(() => cb(data), latency);
         }
       });
-    }
-    wrapPush(view, opts, push) {
-      let latency = this.getLatencySim();
-      let oldJoinCount = view.joinCount;
-      if (!latency) {
-        if (this.isConnected() && opts.timeout) {
-          return push().receive("timeout", () => {
-            if (view.joinCount === oldJoinCount && !view.isDestroyed()) {
-              this.reloadWithJitter(view, () => {
-                this.log(view, "timeout", () => ["received timeout while communicating with server. Falling back to hard refresh for recovery"]);
-              });
-            }
-          });
-        } else {
-          return push();
-        }
-      }
-      let fakePush = {
-        receives: [],
-        receive(kind, cb) {
-          this.receives.push([kind, cb]);
-        }
-      };
-      setTimeout(() => {
-        if (view.isDestroyed()) {
-          return;
-        }
-        fakePush.receives.reduce((acc, [kind, cb]) => acc.receive(kind, cb), push());
-      }, latency);
-      return fakePush;
     }
     reloadWithJitter(view, log) {
       clearTimeout(this.reloadWithJitterTimer);
