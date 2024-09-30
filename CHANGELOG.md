@@ -22,6 +22,9 @@ let liveSocket = new LiveSocket("/live", Socket, {
 })
 ```
 
+Additionally, the `phx-page-loading` attrbute has been removed in favor of using the `page_loading: true`
+option to `Phoenix.LiveView.JS.push/2` as needed.
+
 ### Migrating from phx-feedback-for
 
 While we provide [a shim for existing applications](https://gist.github.com/chrismccord/c4c60328c6ac5ec29e167bb115315d82) relying on phx-feedback-for,
@@ -112,6 +115,7 @@ generated user module:
 ## 1.0.0-rc.7
 
 ### Enhancements
+  * Support custom redirect statuses on `Phoenix.LiveView.redirect/2`
   * Export `createHook` from `phoenix_live_view` to allow CustomElement's to use hooks
   * Expose programmable JS command interface to hooks for showing, hiding, addClass, etc from a hook which integrates with server DOM patching
   * Support targeting inner and closest query selectors in JS commands with `to: {:inner, "a"}` and `to: {:closet, "tr"}`, etc.
