@@ -1193,6 +1193,7 @@ defmodule Phoenix.LiveView.Channel do
               token =
                 Phoenix.LiveView.Static.sign_token(endpoint, %{
                   status: status,
+                  view: inspect(view),
                   exception: exception_mod,
                   stack: stack
                 })
