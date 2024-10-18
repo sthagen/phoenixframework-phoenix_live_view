@@ -112,7 +112,7 @@ generated user module:
      if valid_password?(changeset.data, password) do
 ```
 
-## 1.0.0-rc.7
+## 1.0.0-rc.7 (2024-10-17)
 
 ### Enhancements
   * Support nested inputs in `Phoenix.Component.used_input?/1`
@@ -126,6 +126,7 @@ generated user module:
   * Enhance error recovery during connecting mount to trigger plug_status error pipeline
 
 ### Bug fixes
+  * Fix `phx-click-loading` classes being incorrectly applied to child elements when issues from a non user click/navigation event
   * Fix hooks on root LiveComponent container not being torn down and created when the DOM id changes
   * Fix select focus states and selects not being updated when focused #3083, #3107
   * Fix nested LiveViews inside a stream element
