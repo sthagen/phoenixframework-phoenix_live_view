@@ -94,11 +94,14 @@ var STREAM = "stream";
 
 // js/phoenix_live_view/entry_uploader.js
 var EntryUploader = class {
-  constructor(entry, chunkSize, liveSocket) {
+  constructor(entry, config, liveSocket) {
+    console.log(config);
+    let { chunk_size, chunk_timeout } = config;
     this.liveSocket = liveSocket;
     this.entry = entry;
     this.offset = 0;
-    this.chunkSize = chunkSize;
+    this.chunkSize = chunk_size;
+    this.chunkTimeout = chunk_timeout;
     this.chunkTimer = null;
     this.errored = false;
     this.uploadChannel = liveSocket.channel(`lvu:${entry.ref}`, { token: entry.metadata() });
@@ -136,7 +139,7 @@ var EntryUploader = class {
     if (!this.uploadChannel.isJoined()) {
       return;
     }
-    this.uploadChannel.push("chunk", chunk).receive("ok", () => {
+    this.uploadChannel.push("chunk", chunk, this.chunkTimeout).receive("ok", () => {
       this.entry.progress(this.offset / this.entry.file.size * 100);
       if (!this.isDone()) {
         this.chunkTimer = setTimeout(() => this.readNextChunk(), this.liveSocket.getLatencySim() || 0);
@@ -195,7 +198,7 @@ var isEmpty = (obj) => {
 var maybe = (el, callback) => el && callback(el);
 var channelUploader = function(entries, onError, resp, liveSocket) {
   entries.forEach((entry) => {
-    let entryUploader = new EntryUploader(entry, resp.config.chunk_size, liveSocket);
+    let entryUploader = new EntryUploader(entry, resp.config, liveSocket);
     entryUploader.upload();
   });
 };
@@ -2206,7 +2209,8 @@ var morphdom_esm_default = morphdom;
 // js/phoenix_live_view/dom_patch.js
 var DOMPatch = class {
   static patchWithClonedTree(container, clonedTree, liveSocket) {
-    let activeElement = liveSocket.getActiveElement();
+    let focused = liveSocket.getActiveElement();
+    let { selectionStart, selectionEnd } = focused && dom_default.hasSelectionRange(focused) ? focused : {};
     let phxUpdate = liveSocket.binding(PHX_UPDATE);
     morphdom_esm_default(container, clonedTree, {
       childrenOnly: false,
@@ -2218,12 +2222,13 @@ var DOMPatch = class {
         if (dom_default.isIgnored(fromEl, phxUpdate)) {
           return false;
         }
-        if (activeElement && activeElement.isSameNode(fromEl) && dom_default.isFormInput(fromEl)) {
+        if (focused && focused.isSameNode(fromEl) && dom_default.isFormInput(fromEl)) {
           dom_default.mergeFocusedInput(fromEl, toEl);
           return false;
         }
       }
     });
+    liveSocket.silenceEvents(() => dom_default.restoreFocus(focused, selectionStart, selectionEnd));
   }
   constructor(view, container, id, html, streams, targetCID) {
     this.view = view;
@@ -3221,12 +3226,36 @@ var ViewHook = class {
       }
     };
   }
-  pushEvent(event, payload = {}, onReply = function() {
-  }) {
+  pushEvent(event, payload = {}, onReply) {
+    if (onReply === void 0) {
+      return new Promise((resolve, reject) => {
+        try {
+          const ref = this.__view().pushHookEvent(this.el, null, event, payload, (reply, _ref) => resolve(reply));
+          if (ref === false) {
+            reject(new Error("unable to push hook event. LiveView not connected"));
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
     return this.__view().pushHookEvent(this.el, null, event, payload, onReply);
   }
-  pushEventTo(phxTarget, event, payload = {}, onReply = function() {
-  }) {
+  pushEventTo(phxTarget, event, payload = {}, onReply) {
+    if (onReply === void 0) {
+      return new Promise((resolve, reject) => {
+        try {
+          this.__view().withinTargets(phxTarget, (view, targetCtx) => {
+            const ref = view.pushHookEvent(this.el, targetCtx, event, payload, (reply, _ref) => resolve(reply));
+            if (ref === false) {
+              reject(new Error("unable to push hook event. LiveView not connected"));
+            }
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
     return this.__view().withinTargets(phxTarget, (view, targetCtx) => {
       return view.pushHookEvent(this.el, targetCtx, event, payload, onReply);
     });
@@ -5331,7 +5360,10 @@ var LiveSocket = class {
     for (let type of ["change", "input"]) {
       this.on(type, (e) => {
         if (e instanceof CustomEvent && e.target.form === void 0) {
-          throw new Error(`dispatching a custom ${type} event is only supported on input elements inside a form`);
+          if (e.detail && e.detail.dispatcher) {
+            throw new Error(`dispatching a custom ${type} event is only supported on input elements inside a form`);
+          }
+          return;
         }
         let phxChange = this.binding("change");
         let input = e.target;
