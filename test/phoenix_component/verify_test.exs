@@ -1,7 +1,6 @@
 defmodule Phoenix.ComponentVerifyTest do
   use ExUnit.Case, async: true
 
-  @moduletag :after_verify
   import ExUnit.CaptureIO
 
   test "validate required attributes" do
@@ -644,7 +643,7 @@ defmodule Phoenix.ComponentVerifyTest do
           def func_slot_wo_do_block(assigns) do
             ~H"""
             <div>
-              <%= render_slot(@item) %>
+              {render_slot(@item)}
             </div>
             """
           end
@@ -673,7 +672,7 @@ defmodule Phoenix.ComponentVerifyTest do
           def func_slot_wo_do_block(assigns) do
             ~H"""
             <div>
-              <%= render_slot(@item) %>
+              {render_slot(@item)}
             </div>
             """
           end
@@ -1082,7 +1081,7 @@ defmodule Phoenix.ComponentVerifyTest do
           def func(assigns) do
             ~H"""
             <div>
-              <%= render_slot(@slot) %>
+              {render_slot(@slot)}
             </div>
             """
           end
@@ -1213,7 +1212,7 @@ defmodule Phoenix.ComponentVerifyTest do
 
           def public(assigns) do
             ~H"""
-            <%= @attr %>
+            {@attr}
             """
           end
 
@@ -1221,7 +1220,7 @@ defmodule Phoenix.ComponentVerifyTest do
 
           defp private(assigns) do
             ~H"""
-            <%= @attr %>
+            {@attr}
             """
           end
 

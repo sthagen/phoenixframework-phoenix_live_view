@@ -128,7 +128,7 @@ defmodule Phoenix.LiveView do
 
   ```heex
   <div :if={@org.loading}>Loading organization...</div>
-  <div :if={org = @org.ok? && @org.result}><%= org.name %> loaded!</div>
+  <div :if={org = @org.ok? && @org.result}>{org.name} loaded!</div>
   ```
 
   The `Phoenix.Component.async_result/1` function component can also be used to
@@ -138,7 +138,7 @@ defmodule Phoenix.LiveView do
   <.async_result :let={org} assign={@org}>
     <:loading>Loading organization...</:loading>
     <:failed :let={_failure}>there was an error loading the organization</:failed>
-    <%= org.name %>
+    {org.name}
   </.async_result>
   ```
 
@@ -548,10 +548,10 @@ defmodule Phoenix.LiveView do
     mod_or_mod_arg =
       case mod_or_mod_arg do
         {mod, arg} ->
-          {expand_literals(mod, __CALLER__), expand_literals(arg, __CALLER__)}
+          {Macro.expand_literals(mod, __CALLER__), Macro.expand_literals(arg, __CALLER__)}
 
         mod_or_mod_arg ->
-          expand_literals(mod_or_mod_arg, __CALLER__)
+          Macro.expand_literals(mod_or_mod_arg, __CALLER__)
       end
 
     quote do
@@ -562,19 +562,6 @@ defmodule Phoenix.LiveView do
       )
     end
   end
-
-  defp expand_literals(ast, env) do
-    if Macro.quoted_literal?(ast) do
-      Macro.prewalk(ast, &expand_alias(&1, env))
-    else
-      ast
-    end
-  end
-
-  defp expand_alias({:__aliases__, _, _} = alias, env),
-    do: Macro.expand(alias, %{env | function: {:on_mount, 4}})
-
-  defp expand_alias(other, _env), do: other
 
   @doc """
   Returns true if the socket is connected.
@@ -711,7 +698,7 @@ defmodule Phoenix.LiveView do
 
   ```heex
   <p class="alert" phx-click="lv:clear-flash">
-    <%= Phoenix.Flash.get(@flash, :info) %>
+    {Phoenix.Flash.get(@flash, :info)}
   </p>
   ```
   """
@@ -730,7 +717,7 @@ defmodule Phoenix.LiveView do
 
   ```heex
   <p class="alert" phx-click="lv:clear-flash" phx-value-key="info">
-    <%= Phoenix.Flash.get(@flash, :info) %>
+    {Phoenix.Flash.get(@flash, :info)}
   </p>
   ```
   """
@@ -1265,11 +1252,9 @@ defmodule Phoenix.LiveView do
   And then in your views:
 
   ```heex
-  <%= if @static_changed? do %>
-    <div id="reload-static">
-      The app has been updated. Click here to <a href="#" onclick="window.location.reload()">reload</a>.
-    </div>
-  <% end %>
+  <div :if={@static_changed?} id="reload-static">
+    The app has been updated. Click here to <a href="#" onclick="window.location.reload()">reload</a>.
+  </div>
   ```
 
   If you prefer, you can also send a JavaScript script that immediately
@@ -1709,8 +1694,8 @@ defmodule Phoenix.LiveView do
         :for={{dom_id, song} <- @streams.songs}
         id={dom_id}
       >
-        <td><%= song.title %></td>
-        <td><%= song.duration %></td>
+        <td>{song.title}</td>
+        <td>{song.duration}</td>
       </tr>
     </tbody>
   </table>
@@ -1740,8 +1725,8 @@ defmodule Phoenix.LiveView do
         :for={{dom_id, song} <- @streams.songs}
         id={dom_id}
       >
-        <td><%= song.title %></td>
-        <td><%= song.duration %></td>
+        <td>{song.title}</td>
+        <td>{song.duration}</td>
       </tr>
     </tbody>
   </table>
@@ -1941,7 +1926,7 @@ defmodule Phoenix.LiveView do
               :for={{dom_id, song} <- @streams.songs}
               id={dom_id}
             >
-              <td><%= song.title %></td>
+              <td>{song.title}</td>
               <td><button phx-click={JS.push("delete", value: %{id: dom_id})}>delete</button></td>
             </tr>
           </tbody>

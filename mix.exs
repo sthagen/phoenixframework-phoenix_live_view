@@ -1,13 +1,13 @@
 defmodule Phoenix.LiveView.MixProject do
   use Mix.Project
 
-  @version "1.0.0-rc.7"
+  @version "1.0.0-rc.8"
 
   def project do
     [
       app: :phoenix_live_view,
       version: @version,
-      elixir: "~> 1.13",
+      elixir: "~> 1.14.1 or ~> 1.15",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       test_options: [docs: true],
@@ -51,8 +51,23 @@ defmodule Phoenix.LiveView.MixProject do
       {:jason, "~> 1.0", optional: true},
       {:floki, "~> 0.36", optional: true},
       {:ex_doc, "~> 0.29", only: :docs},
-      {:makeup_eex, ">= 0.1.1", only: :docs},
+      # TODO: change me when new makeup_elixir is released
+      # {:makeup_elixir, "~> 1.0", only: :docs},
+      {:makeup_elixir,
+       github: "elixir-makeup/makeup_elixir",
+       ref: "532ebf9e10989a4a54fff47cb51d36a621928b99",
+       only: :docs,
+       override: true},
       {:makeup_diff, "~> 0.1.1", only: :docs},
+      # TODO: change me when makeup_lexers is not needed any more
+      # {:makeup_eex, "~> 1.0", only: :docs},
+      {:makeup_eex,
+       github: "SteffenDE/makeup_eex",
+       ref: "5cfc91389dbdfad885734bc8050af61840eab019",
+       only: :docs,
+       override: true},
+      # TODO: remove me when makeup_lexers is not needed any more
+      {:makeup_lexers, github: "SteffenDE/makeup_lexers", only: :docs},
       {:html_entities, ">= 0.0.0", only: :test},
       {:phoenix_live_reload, "~> 1.4", only: :test},
       {:phoenix_html_helpers, "~> 1.0", only: :test},

@@ -230,6 +230,7 @@ defmodule Phoenix.LiveView.TagEngine do
     Enum.any?(tokens, fn
       {:text, _, _} -> false
       {:expr, _, _} -> false
+      {:body_expr, _, _} -> false
       _ -> true
     end)
   end
@@ -441,6 +442,14 @@ defmodule Phoenix.LiveView.TagEngine do
     state
     |> set_root_on_not_tag()
     |> update_subengine(:handle_expr, [marker, expr])
+  end
+
+  defp handle_token({:body_expr, value, %{line: line, column: column}}, state) do
+    quoted = Code.string_to_quoted!(value, line: line, column: column, file: state.file)
+
+    state
+    |> set_root_on_not_tag()
+    |> update_subengine(:handle_expr, ["=", quoted])
   end
 
   # Text
@@ -1242,19 +1251,13 @@ defmodule Phoenix.LiveView.TagEngine do
     # warn if using name="id" on an input
     case Enum.find(attrs, &match?({"name", {:string, "id", _}, _}, &1)) do
       {_name, _value, attr_meta} ->
-        # TODO: Remove conditional once we require Elixir v1.14+
-        meta =
-          if Version.match?(System.version(), ">= 1.14.0") do
-            [
-              line: attr_meta.line,
-              column: attr_meta.column,
-              file: state.file,
-              module: state.caller.module,
-              function: state.caller.function
-            ]
-          else
-            Macro.Env.stacktrace(%{state.caller | line: attr_meta.line})
-          end
+        meta = [
+          line: attr_meta.line,
+          column: attr_meta.column,
+          file: state.file,
+          module: state.caller.module,
+          function: state.caller.function
+        ]
 
         IO.warn(
           """
