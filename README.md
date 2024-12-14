@@ -62,6 +62,8 @@ Also follow these announcements from the Phoenix team on LiveView for more examp
 
   * [Build a real-time Twitter clone with LiveView](https://www.phoenixframework.org/blog/build-a-real-time-twitter-clone-in-15-minutes-with-live-view-and-phoenix-1-5)
 
+  * [Build a real-time Twitch clone with LiveView and Elixir WebRTC](https://www.youtube.com/watch?v=jziOb2Edfzk)
+
   * [Initial announcement](https://dockyard.com/blog/2018/12/12/phoenix-liveview-interactive-real-time-apps-no-need-to-write-javascript)
 
 ## Component systems
@@ -74,7 +76,7 @@ community at different stages of development:
 
 * [Doggo](https://github.com/woylie/doggo): Headless UI components for Phoenix
 
-* [Petal Components](https://github.com/petalframework/petal_components): Phoenix + Live View HEEX Components 
+* [Petal Components](https://github.com/petalframework/petal_components): Phoenix + Live View HEEX Components
 
 * [PrimerLive](https://github.com/ArthurClemens/primer_live): An implementation of GitHub's Primer Design System using Phoenix LiveView
 
