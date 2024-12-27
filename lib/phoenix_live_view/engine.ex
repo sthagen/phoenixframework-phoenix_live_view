@@ -153,10 +153,6 @@ defmodule Phoenix.LiveView.Rendered do
       Phoenix.HTML.Safe.to_iodata(struct)
     end
 
-    def to_iodata(nil) do
-      raise "cannot convert .heex/.leex template with change tracking to iodata"
-    end
-
     def to_iodata(other) do
       other
     end
@@ -1299,6 +1295,7 @@ defmodule Phoenix.LiveView.Engine do
   defp recur_changed_assign([], head, assigns, changed) do
     case {assigns, changed} do
       {%{^head => value}, %{^head => value}} -> false
+      {m1, m2} when not is_map_key(m1, head) and not is_map_key(m2, head) -> false
       {_, %{^head => value}} when is_map(value) -> value
       {_, _} -> true
     end
