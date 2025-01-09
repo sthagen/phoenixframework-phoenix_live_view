@@ -4780,7 +4780,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     }
     // public
     version() {
-      return "1.0.1";
+      return "1.0.2";
     }
     isProfileEnabled() {
       return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true";
@@ -4978,7 +4978,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       dom_default.all(document, `${PHX_VIEW_SELECTOR}:not([${PHX_PARENT_ID}])`, (rootEl) => {
         if (!this.getRootById(rootEl.id)) {
           let view = this.newRootView(rootEl);
-          view.setHref(this.getHref());
+          if (!dom_default.isPhxSticky(rootEl)) {
+            view.setHref(this.getHref());
+          }
           view.join();
           if (rootEl.hasAttribute(PHX_MAIN)) {
             this.main = view;
