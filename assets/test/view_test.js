@@ -3,7 +3,7 @@ import {LiveSocket, createHook} from "phoenix_live_view/index"
 import DOM from "phoenix_live_view/dom"
 import View from "phoenix_live_view/view"
 
-import {version as liveview_version} from "../package.json"
+import {version as liveview_version} from "../../package.json"
 
 import {
   PHX_LOADING_CLASS,
@@ -832,6 +832,7 @@ describe("View Hooks", function(){
       liveview_version
     })
     expect(view.el.firstChild.innerHTML).toBe("TEST MOUNT")
+    expect(Object.keys(view.viewHooks)).toHaveLength(1)
 
     view.update({
       s: ["<h2 id=\"up\" phx-hook=\"Upcase\">test update</h2>"],
@@ -849,6 +850,7 @@ describe("View Hooks", function(){
     view.update({s: ["<div></div>"], fingerprint: 123}, [])
     expect(upcaseWasDestroyed).toBe(true)
     expect(hookLiveSocket).toBeDefined()
+    expect(Object.keys(view.viewHooks)).toEqual([])
   })
 
   test("createHook", (done) => {
