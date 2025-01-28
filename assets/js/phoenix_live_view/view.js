@@ -318,8 +318,12 @@ export default class View {
       this.formsForRecovery = this.getFormsForRecovery()
     }
     if(this.isMain() && window.history.state === null){
-      // set initial history entry if this is the first page load
-      this.liveSocket.replaceRootHistory()
+      // set initial history entry if this is the first page load (no history)
+      Browser.pushState("replace", {
+        type: "patch",
+        id: this.id,
+        position: this.liveSocket.currentHistoryPosition
+      })
     }
 
     if(liveview_version !== this.liveSocket.version()){
@@ -697,6 +701,9 @@ export default class View {
   addHook(el){
     let hookElId = ViewHook.elementID(el)
 
+    // only ever try to add hooks to elements owned by this view
+    if(el.getAttribute && !this.ownsElement(el)){ return }
+
     if(hookElId && !this.viewHooks[hookElId]){
       // hook created, but not attached (createHook for web component)
       let hook = DOM.getCustomElHook(el) || logError(`no hook found for custom element: ${el.id}`)
@@ -710,7 +717,6 @@ export default class View {
     } else {
       // new hook found with phx-hook attribute
       let hookName = el.getAttribute(`data-phx-${PHX_HOOK}`) || el.getAttribute(this.binding(PHX_HOOK))
-      if(hookName && !this.ownsElement(el)){ return }
       let callbacks = this.liveSocket.getHookCallbacks(hookName)
 
       if(callbacks){
@@ -974,11 +980,12 @@ export default class View {
     let elRef = new ElementRef(el)
 
     elRef.maybeUndo(ref, phxEvent, clonedTree => {
-      let hook = this.triggerBeforeUpdateHook(el, clonedTree)
-      DOMPatch.patchWithClonedTree(el, clonedTree, this.liveSocket)
+      // we need to perform a full patch on unlocked elements
+      // to perform all the necessary logic (like calling updated for hooks, etc.)
+      let patch = new DOMPatch(this, el, this.id, clonedTree, [], null, {undoRef: ref})
+      const phxChildrenAdded = this.performPatch(patch, true)
       DOM.all(el, `[${PHX_REF_SRC}="${this.refSrc()}"]`, child => this.undoElRef(child, ref, phxEvent))
-      this.execNewMounted(el)
-      if(hook){ hook.__updated() }
+      if(phxChildrenAdded){ this.joinNewChildren() }
     })
   }
 
@@ -1185,15 +1192,20 @@ export default class View {
     }
     this.pushWithReply(refGenerator, "event", event).then(({resp}) => {
       if(DOM.isUploadInput(inputEl) && DOM.isAutoUpload(inputEl)){
-        if(LiveUploader.filesAwaitingPreflight(inputEl).length > 0){
-          let [ref, _els] = refGenerator()
-          this.undoRefs(ref, phxEvent, [inputEl.form])
-          this.uploadFiles(inputEl.form, phxEvent, targetCtx, ref, cid, (_uploads) => {
-            callback && callback(resp)
-            this.triggerAwaitingSubmit(inputEl.form, phxEvent)
-            this.undoRefs(ref, phxEvent)
-          })
-        }
+        // the element could be inside a locked parent for other unrelated changes;
+        // we can only start uploads when the tree is unlocked and the
+        // necessary data attributes are set in the real DOM
+        ElementRef.onUnlock(inputEl, () => {
+          if(LiveUploader.filesAwaitingPreflight(inputEl).length > 0){
+            let [ref, _els] = refGenerator()
+            this.undoRefs(ref, phxEvent, [inputEl.form])
+            this.uploadFiles(inputEl.form, phxEvent, targetCtx, ref, cid, (_uploads) => {
+              callback && callback(resp)
+              this.triggerAwaitingSubmit(inputEl.form, phxEvent)
+              this.undoRefs(ref, phxEvent)
+            })
+          }
+        })
       } else {
         callback && callback(resp)
       }

@@ -15,21 +15,21 @@ defmodule Phoenix.LiveView.LiveViewTest do
     {:ok, conn: Plug.Test.init_test_session(build_conn(), config[:session] || %{})}
   end
 
-  defp simulate_bad_token_on_page(conn) do
+  defp simulate_bad_token_on_page(%Plug.Conn{} = conn) do
     html = html_response(conn, 200)
     [{_id, session_token, _static} | _] = html |> DOM.parse() |> DOM.find_live_views()
-    %Plug.Conn{conn | resp_body: String.replace(html, session_token, "badsession")}
+    %{conn | resp_body: String.replace(html, session_token, "badsession")}
   end
 
-  defp simulate_outdated_token_on_page(conn) do
+  defp simulate_outdated_token_on_page(%Plug.Conn{} = conn) do
     html = html_response(conn, 200)
     [{_id, session_token, _static} | _] = html |> DOM.parse() |> DOM.find_live_views()
     salt = Phoenix.LiveView.Utils.salt!(@endpoint)
     outdated_token = Phoenix.Token.sign(@endpoint, salt, {0, %{}})
-    %Plug.Conn{conn | resp_body: String.replace(html, session_token, outdated_token)}
+    %{conn | resp_body: String.replace(html, session_token, outdated_token)}
   end
 
-  defp simulate_expired_token_on_page(conn) do
+  defp simulate_expired_token_on_page(%Plug.Conn{} = conn) do
     html = html_response(conn, 200)
     [{_id, session_token, _static} | _] = html |> DOM.parse() |> DOM.find_live_views()
     salt = Phoenix.LiveView.Utils.salt!(@endpoint)
@@ -39,7 +39,7 @@ defmodule Phoenix.LiveView.LiveViewTest do
         signed_at: 0
       )
 
-    %Plug.Conn{conn | resp_body: String.replace(html, session_token, expired_token)}
+    %{conn | resp_body: String.replace(html, session_token, expired_token)}
   end
 
   describe "mounting" do
@@ -150,6 +150,66 @@ defmodule Phoenix.LiveView.LiveViewTest do
     test "live render with container giving class as list", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/classlist")
       assert html =~ ~s|class="foo bar"|
+    end
+
+    test "raises for duplicate ids by default", %{conn: conn} do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} = live(conn, "/duplicate-id")
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _pid, {exception, _}}
+      assert Exception.message(exception) =~ "Duplicate id found while testing LiveView: a"
+    end
+
+    test "raises for duplicate ids when on_error: :raise", %{conn: conn} do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} = live(conn, "/duplicate-id", on_error: :raise)
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _pid, {exception, _}}
+      assert Exception.message(exception) =~ "Duplicate id found while testing LiveView: a"
+    end
+
+    test "raises for duplicate components by default", %{conn: conn} do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} = live(conn, "/dynamic-duplicate-component", on_error: :raise)
+        view |> element("button", "Toggle duplicate LC") |> render_click()
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _pid, {exception, _}}
+      message = Exception.message(exception)
+      assert message =~ "Duplicate live component found while testing LiveView:"
+      assert message =~ "I am LiveComponent2"
+      refute message =~ "I am a LC inside nested LV"
+    end
+
+    test "raises for duplicate components when on_error: :raise", %{conn: conn} do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} = live(conn, "/dynamic-duplicate-component", on_error: :raise)
+        view |> element("button", "Toggle duplicate LC") |> render_click()
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _pid, {exception, _}}
+      message = Exception.message(exception)
+      assert message =~ "Duplicate live component found while testing LiveView:"
+      assert message =~ "I am LiveComponent2"
+      refute message =~ "I am a LC inside nested LV"
     end
   end
 
@@ -355,8 +415,8 @@ defmodule Phoenix.LiveView.LiveViewTest do
       assert render(view) =~ "session: %{&quot;hello&quot; =&gt; &quot;world&quot;}"
     end
 
-    test "renders a live view with custom session and a router", %{conn: conn} do
-      conn = %Plug.Conn{conn | request_path: "/router/thermo_defaults/123"}
+    test "renders a live view with custom session and a router", %{conn: %Plug.Conn{} = conn} do
+      conn = %{conn | request_path: "/router/thermo_defaults/123"}
 
       {:ok, view, _} =
         live_isolated(conn, Phoenix.LiveViewTest.Support.DashboardLive,
@@ -387,6 +447,92 @@ defmodule Phoenix.LiveView.LiveViewTest do
           session: %{hello: "world"}
         )
       end
+    end
+
+    test "raises for duplicate ids by default" do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} =
+          live_isolated(
+            Phoenix.ConnTest.build_conn(),
+            Phoenix.LiveViewTest.Support.DuplicateIdLive
+          )
+
+        # errors are detected asynchronously, so we need to render again for the message to be processed
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _, {exception, _}}
+      assert Exception.message(exception) =~ "Duplicate id found while testing LiveView: a"
+    end
+
+    test "raises for duplicate ids when on_error: raise" do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} =
+          live_isolated(
+            Phoenix.ConnTest.build_conn(),
+            Phoenix.LiveViewTest.Support.DuplicateIdLive,
+            on_error: :raise
+          )
+
+        # errors are detected asynchronously, so we need to render again for the message to be processed
+        render(view)
+      end
+
+      assert catch_exit(fun.())
+      assert_receive {:EXIT, _, {exception, _}}
+      assert Exception.message(exception) =~ "Duplicate id found while testing LiveView: a"
+    end
+
+    test "raises for duplicate components by default" do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} =
+          live_isolated(
+            Phoenix.ConnTest.build_conn(),
+            Phoenix.LiveViewTest.Support.DynamicDuplicateComponentLive
+          )
+
+        view |> element("button", "Toggle duplicate LC") |> render_click()
+        render(view)
+      end
+
+      # errors are detected asynchronously, so we need to render again for the message to be processed
+      assert catch_exit(fun.())
+
+      assert_receive {:EXIT, _, {exception, _}}
+
+      assert Exception.message(exception) =~
+               "Duplicate live component found while testing LiveView:"
+    end
+
+    test "raises for duplicate components when on_error: raise" do
+      Process.flag(:trap_exit, true)
+
+      fun = fn ->
+        {:ok, view, _html} =
+          live_isolated(
+            Phoenix.ConnTest.build_conn(),
+            Phoenix.LiveViewTest.Support.DynamicDuplicateComponentLive,
+            on_error: :raise
+          )
+
+        view |> element("button", "Toggle duplicate LC") |> render_click()
+        render(view)
+      end
+
+      # errors are detected asynchronously, so we need to render again for the message to be processed
+      assert catch_exit(fun.())
+
+      assert_receive {:EXIT, _, {exception, _}}
+
+      assert Exception.message(exception) =~
+               "Duplicate live component found while testing LiveView:"
     end
   end
 

@@ -834,6 +834,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         return;
       }
       ops.forEach(([name, op, _stashed]) => this.putSticky(el, name, op));
+    },
+    isLocked(el) {
+      return el.hasAttribute && el.hasAttribute(PHX_REF_LOCK);
     }
   };
   var dom_default = DOM;
@@ -1340,6 +1343,16 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
 
   // js/phoenix_live_view/element_ref.js
   var ElementRef = class {
+    static onUnlock(el, callback) {
+      if (!dom_default.isLocked(el) && !el.closest(`[${PHX_REF_LOCK}]`)) {
+        return callback();
+      }
+      const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
+      const ref = closestLock.closest(`[${PHX_REF_LOCK}]`).getAttribute(PHX_REF_LOCK);
+      closestLock.addEventListener(`phx:undo-lock:${ref}`, () => {
+        callback();
+      }, { once: true });
+    }
     constructor(el) {
       this.el = el;
       this.loadingRef = el.hasAttribute(PHX_REF_LOADING) ? parseInt(el.getAttribute(PHX_REF_LOADING), 10) : null;
@@ -1991,37 +2004,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
 
   // js/phoenix_live_view/dom_patch.js
   var DOMPatch = class {
-    static patchWithClonedTree(container, clonedTree, liveSocket) {
-      let focused = liveSocket.getActiveElement();
-      let { selectionStart, selectionEnd } = focused && dom_default.hasSelectionRange(focused) ? focused : {};
-      let phxUpdate = liveSocket.binding(PHX_UPDATE);
-      let externalFormTriggered = null;
-      morphdom_esm_default(container, clonedTree, {
-        childrenOnly: false,
-        onBeforeElUpdated: (fromEl, toEl) => {
-          dom_default.syncPendingAttrs(fromEl, toEl);
-          if (!container.isSameNode(fromEl) && fromEl.hasAttribute(PHX_REF_LOCK)) {
-            return false;
-          }
-          if (dom_default.isIgnored(fromEl, phxUpdate)) {
-            return false;
-          }
-          if (focused && focused.isSameNode(fromEl) && dom_default.isFormInput(fromEl)) {
-            dom_default.mergeFocusedInput(fromEl, toEl);
-            return false;
-          }
-          if (dom_default.isNowTriggerFormExternal(toEl, liveSocket.binding(PHX_TRIGGER_ACTION))) {
-            externalFormTriggered = toEl;
-          }
-        }
-      });
-      if (externalFormTriggered) {
-        liveSocket.unload();
-        Object.getPrototypeOf(externalFormTriggered).submit.call(externalFormTriggered);
-      }
-      liveSocket.silenceEvents(() => dom_default.restoreFocus(focused, selectionStart, selectionEnd));
-    }
-    constructor(view, container, id, html, streams, targetCID) {
+    constructor(view, container, id, html, streams, targetCID, opts = {}) {
       this.view = view;
       this.liveSocket = view.liveSocket;
       this.container = container;
@@ -2046,6 +2029,8 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         afterphxChildAdded: [],
         aftertransitionsDiscarded: []
       };
+      this.withChildren = opts.withChildren || opts.undoRef || false;
+      this.undoRef = opts.undoRef;
     }
     before(kind, callback) {
       this.callbacks[`before${kind}`].push(callback);
@@ -2080,7 +2065,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       let updates = [];
       let appendPrependUpdates = [];
       let externalFormTriggered = null;
-      function morph(targetContainer2, source, withChildren = false) {
+      function morph(targetContainer2, source, withChildren = this.withChildren) {
         let morphCallbacks = {
           // normally, we are running with childrenOnly, as the patch HTML for a LV
           // does not include the LV attrs (data-phx-session, etc.)
@@ -2206,7 +2191,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
             }
             let isFocusedFormEl = focused && fromEl.isSameNode(focused) && dom_default.isFormInput(fromEl);
             let focusedSelectChanged = isFocusedFormEl && this.isChangedSelect(fromEl, toEl);
-            if (fromEl.hasAttribute(PHX_REF_SRC)) {
+            if (fromEl.hasAttribute(PHX_REF_SRC) && fromEl.getAttribute(PHX_REF_LOCK) != this.undoRef) {
               if (dom_default.isUploadInput(fromEl)) {
                 dom_default.mergeAttrs(fromEl, toEl, { isIgnored: true });
                 this.trackBefore("updated", fromEl, toEl);
@@ -3625,7 +3610,11 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         this.formsForRecovery = this.getFormsForRecovery();
       }
       if (this.isMain() && window.history.state === null) {
-        this.liveSocket.replaceRootHistory();
+        browser_default.pushState("replace", {
+          type: "patch",
+          id: this.id,
+          position: this.liveSocket.currentHistoryPosition
+        });
       }
       if (liveview_version !== this.liveSocket.version()) {
         console.error(`LiveView asset version mismatch. JavaScript version ${this.liveSocket.version()} vs. server ${liveview_version}. To avoid issues, please ensure that your assets use the same version as the server.`);
@@ -3948,6 +3937,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     }
     addHook(el) {
       let hookElId = ViewHook.elementID(el);
+      if (el.getAttribute && !this.ownsElement(el)) {
+        return;
+      }
       if (hookElId && !this.viewHooks[hookElId]) {
         let hook = dom_default.getCustomElHook(el) || logError(`no hook found for custom element: ${el.id}`);
         this.viewHooks[hookElId] = hook;
@@ -3957,9 +3949,6 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         return;
       } else {
         let hookName = el.getAttribute(`data-phx-${PHX_HOOK}`) || el.getAttribute(this.binding(PHX_HOOK));
-        if (hookName && !this.ownsElement(el)) {
-          return;
-        }
         let callbacks = this.liveSocket.getHookCallbacks(hookName);
         if (callbacks) {
           if (!el.id) {
@@ -4227,12 +4216,11 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     undoElRef(el, ref, phxEvent) {
       let elRef = new ElementRef(el);
       elRef.maybeUndo(ref, phxEvent, (clonedTree) => {
-        let hook = this.triggerBeforeUpdateHook(el, clonedTree);
-        DOMPatch.patchWithClonedTree(el, clonedTree, this.liveSocket);
+        let patch = new DOMPatch(this, el, this.id, clonedTree, [], null, { undoRef: ref });
+        const phxChildrenAdded = this.performPatch(patch, true);
         dom_default.all(el, `[${PHX_REF_SRC}="${this.refSrc()}"]`, (child) => this.undoElRef(child, ref, phxEvent));
-        this.execNewMounted(el);
-        if (hook) {
-          hook.__updated();
+        if (phxChildrenAdded) {
+          this.joinNewChildren();
         }
       });
     }
@@ -4448,15 +4436,17 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       };
       this.pushWithReply(refGenerator, "event", event).then(({ resp }) => {
         if (dom_default.isUploadInput(inputEl) && dom_default.isAutoUpload(inputEl)) {
-          if (LiveUploader.filesAwaitingPreflight(inputEl).length > 0) {
-            let [ref, _els] = refGenerator();
-            this.undoRefs(ref, phxEvent, [inputEl.form]);
-            this.uploadFiles(inputEl.form, phxEvent, targetCtx, ref, cid, (_uploads) => {
-              callback && callback(resp);
-              this.triggerAwaitingSubmit(inputEl.form, phxEvent);
-              this.undoRefs(ref, phxEvent);
-            });
-          }
+          ElementRef.onUnlock(inputEl, () => {
+            if (LiveUploader.filesAwaitingPreflight(inputEl).length > 0) {
+              let [ref, _els] = refGenerator();
+              this.undoRefs(ref, phxEvent, [inputEl.form]);
+              this.uploadFiles(inputEl.form, phxEvent, targetCtx, ref, cid, (_uploads) => {
+                callback && callback(resp);
+                this.triggerAwaitingSubmit(inputEl.form, phxEvent);
+                this.undoRefs(ref, phxEvent);
+              });
+            }
+          });
         } else {
           callback && callback(resp);
         }
@@ -4806,7 +4796,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     }
     // public
     version() {
-      return "1.0.2";
+      return "1.1.0-dev";
     }
     isProfileEnabled() {
       return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true";
@@ -5320,7 +5310,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         if (!this.registerNewLocation(window.location)) {
           return;
         }
-        let { type, backType, id, root, scroll, position } = event.state || {};
+        let { type, backType, id, scroll, position } = event.state || {};
         let href = window.location.href;
         let isForward = position > this.currentHistoryPosition;
         type = isForward ? type : backType || type;
@@ -5328,17 +5318,13 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         this.sessionStorage.setItem(PHX_LV_HISTORY_POSITION, this.currentHistoryPosition.toString());
         dom_default.dispatchEvent(window, "phx:navigate", { detail: { href, patch: type === "patch", pop: true, direction: isForward ? "forward" : "backward" } });
         this.requestDOMUpdate(() => {
+          const callback = () => {
+            this.maybeScroll(scroll);
+          };
           if (this.main.isConnected() && (type === "patch" && id === this.main.id)) {
-            this.main.pushLinkPatch(event, href, null, () => {
-              this.maybeScroll(scroll);
-            });
+            this.main.pushLinkPatch(event, href, null, callback);
           } else {
-            this.replaceMain(href, null, () => {
-              if (root) {
-                this.replaceRootHistory();
-              }
-              this.maybeScroll(scroll);
-            });
+            this.replaceMain(href, null, callback);
           }
         });
       }, false);
@@ -5443,15 +5429,6 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
           }
           done();
         });
-      });
-    }
-    replaceRootHistory() {
-      browser_default.pushState("replace", {
-        root: true,
-        type: "patch",
-        id: this.main.id,
-        position: this.currentHistoryPosition
-        // Preserve current position
       });
     }
     registerNewLocation(newLocation) {
