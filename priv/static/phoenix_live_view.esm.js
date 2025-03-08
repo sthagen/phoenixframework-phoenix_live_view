@@ -73,6 +73,7 @@ var PHX_RELOAD_STATUS = "__phoenix_reload_status__";
 var LOADER_TIMEOUT = 1;
 var MAX_CHILD_JOIN_ATTEMPTS = 3;
 var BEFORE_UNLOAD_LOADER_TIMEOUT = 200;
+var DISCONNECTED_TIMEOUT = 500;
 var BINDING_PREFIX = "phx-";
 var PUSH_TIMEOUT = 3e4;
 var DEBOUNCE_TRIGGER = "debounce-trigger";
@@ -488,12 +489,13 @@ var DOM = {
       case null:
         return callback();
       case "blur":
+        this.incCycle(el, "debounce-blur-cycle", () => {
+          if (asyncFilter()) {
+            callback();
+          }
+        });
         if (this.once(el, "debounce-blur")) {
-          el.addEventListener("blur", () => {
-            if (asyncFilter()) {
-              callback();
-            }
-          });
+          el.addEventListener("blur", () => this.triggerCycle(el, "debounce-blur-cycle"));
         }
         return;
       default:
@@ -3411,6 +3413,7 @@ var View = class _View {
     this.lastAckRef = null;
     this.childJoins = 0;
     this.loaderTimer = null;
+    this.disconnectedTimer = null;
     this.pendingDiffs = [];
     this.pendingForms = /* @__PURE__ */ new Set();
     this.redirect = false;
@@ -3519,6 +3522,7 @@ var View = class _View {
   }
   hideLoader() {
     clearTimeout(this.loaderTimer);
+    clearTimeout(this.disconnectedTimer);
     this.setContainerClasses(PHX_CONNECTED_CLASS);
     this.execAll(this.binding("connected"));
   }
@@ -3938,6 +3942,9 @@ var View = class _View {
     delete this.viewHooks[hookId];
   }
   applyPendingUpdates() {
+    if (this.liveSocket.hasPendingLink() && this.root.isMain()) {
+      return;
+    }
     this.pendingDiffs.forEach(({ diff, events }) => this.update(diff, events));
     this.pendingDiffs = [];
     this.eachChild((child) => child.applyPendingUpdates());
@@ -4067,9 +4074,6 @@ var View = class _View {
     }
     this.destroyAllChildren();
     this.liveSocket.dropActiveElement(this);
-    if (document.activeElement) {
-      document.activeElement.blur();
-    }
     if (this.liveSocket.isUnloaded()) {
       this.showLoader(BEFORE_UNLOAD_LOADER_TIMEOUT);
     }
@@ -4093,7 +4097,12 @@ var View = class _View {
     }
     this.showLoader();
     this.setContainerClasses(...classes);
-    this.execAll(this.binding("disconnected"));
+    this.delayedDisconnected();
+  }
+  delayedDisconnected() {
+    this.disconnectedTimer = setTimeout(() => {
+      this.execAll(this.binding("disconnected"));
+    }, this.liveSocket.disconnectedTimeout);
   }
   wrapPush(callerPush, receives) {
     let latency = this.liveSocket.getLatencySim();
@@ -4719,7 +4728,6 @@ var LiveSocket = class {
     this.viewLogger = opts.viewLogger;
     this.metadataCallbacks = opts.metadata || {};
     this.defaults = Object.assign(clone(DEFAULTS), opts.defaults || {});
-    this.activeElement = null;
     this.prevActive = null;
     this.silenced = false;
     this.main = null;
@@ -4733,6 +4741,7 @@ var LiveSocket = class {
     this.hooks = opts.hooks || {};
     this.uploaders = opts.uploaders || {};
     this.loaderTimeout = opts.loaderTimeout || LOADER_TIMEOUT;
+    this.disconnectedTimeout = opts.disconnectedTimeout || DISCONNECTED_TIMEOUT;
     this.reloadWithJitterTimer = null;
     this.maxReloads = opts.maxReloads || MAX_RELOADS;
     this.reloadJitterMin = opts.reloadJitterMin || RELOAD_JITTER_MIN;

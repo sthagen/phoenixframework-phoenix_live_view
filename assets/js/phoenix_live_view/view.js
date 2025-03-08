@@ -157,6 +157,7 @@ export default class View {
     this.lastAckRef = null
     this.childJoins = 0
     this.loaderTimer = null
+    this.disconnectedTimer = null
     this.pendingDiffs = []
     this.pendingForms = new Set()
     this.redirect = false
@@ -268,6 +269,7 @@ export default class View {
 
   hideLoader(){
     clearTimeout(this.loaderTimer)
+    clearTimeout(this.disconnectedTimer)
     this.setContainerClasses(PHX_CONNECTED_CLASS)
     this.execAll(this.binding("connected"))
   }
@@ -754,6 +756,12 @@ export default class View {
   }
 
   applyPendingUpdates(){
+    // prevent race conditions where we might still be pending a new
+    // navigation after applying the current one;
+    // if we call update and a pendingDiff is not applied, it would
+    // be silently dropped otherwise, as update would push it back to
+    // pendingDiffs, but we clear it immediately after
+    if(this.liveSocket.hasPendingLink() && this.root.isMain()){ return }
     this.pendingDiffs.forEach(({diff, events}) => this.update(diff, events))
     this.pendingDiffs = []
     this.eachChild(child => child.applyPendingUpdates())
@@ -882,8 +890,6 @@ export default class View {
     }
     this.destroyAllChildren()
     this.liveSocket.dropActiveElement(this)
-    // document.activeElement can be null in Internet Explorer 11
-    if(document.activeElement){ document.activeElement.blur() }
     if(this.liveSocket.isUnloaded()){
       this.showLoader(BEFORE_UNLOAD_LOADER_TIMEOUT)
     }
@@ -905,7 +911,13 @@ export default class View {
     if(this.isMain()){ DOM.dispatchEvent(window, "phx:page-loading-start", {detail: {to: this.href, kind: "error"}}) }
     this.showLoader()
     this.setContainerClasses(...classes)
-    this.execAll(this.binding("disconnected"))
+    this.delayedDisconnected()
+  }
+
+  delayedDisconnected(){
+    this.disconnectedTimer = setTimeout(() => {
+      this.execAll(this.binding("disconnected"))
+    }, this.liveSocket.disconnectedTimeout)
   }
 
   wrapPush(callerPush, receives){
