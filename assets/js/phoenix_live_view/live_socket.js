@@ -83,6 +83,8 @@ export default class LiveSocket {
     this.sessionStorage = opts.sessionStorage || window.sessionStorage;
     this.boundTopLevelEvents = false;
     this.boundEventNames = new Set();
+    this.blockPhxChangeWhileComposing =
+      opts.blockPhxChangeWhileComposing || false;
     this.serverCloseRef = null;
     this.domCallbacks = Object.assign(
       {
@@ -261,6 +263,10 @@ export default class LiveSocket {
 
   requestDOMUpdate(callback) {
     this.transitions.after(callback);
+  }
+
+  asyncTransition(promise) {
+    this.transitions.addAsyncTransition(promise);
   }
 
   transition(time, onStart, onDone = function () {}) {
@@ -1075,11 +1081,7 @@ export default class LiveSocket {
         }
         const phxChange = this.binding("change");
         const input = e.target;
-        // do not fire phx-change if we are in the middle of a composition session
-        // https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/isComposing
-        // Safari has issues if the input is updated while composing
-        // see https://github.com/phoenixframework/phoenix_live_view/issues/3322
-        if (e.isComposing) {
+        if (this.blockPhxChangeWhileComposing && e.isComposing) {
           const key = `composition-listener-${type}`;
           if (!DOM.private(input, key)) {
             DOM.putPrivate(input, key, true);
@@ -1208,6 +1210,7 @@ export default class LiveSocket {
 class TransitionSet {
   constructor() {
     this.transitions = new Set();
+    this.promises = new Set();
     this.pendingOps = [];
   }
 
@@ -1216,6 +1219,7 @@ class TransitionSet {
       clearTimeout(timer);
       this.transitions.delete(timer);
     });
+    this.promises.clear();
     this.flushPendingOps();
   }
 
@@ -1237,12 +1241,20 @@ class TransitionSet {
     this.transitions.add(timer);
   }
 
+  addAsyncTransition(promise) {
+    this.promises.add(promise);
+    promise.then(() => {
+      this.promises.delete(promise);
+      this.flushPendingOps();
+    });
+  }
+
   pushPendingOp(op) {
     this.pendingOps.push(op);
   }
 
   size() {
-    return this.transitions.size;
+    return this.transitions.size + this.promises.size;
   }
 
   flushPendingOps() {
