@@ -180,6 +180,7 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
       live "/3709/:id", Issue3709Live
       live "/3719", Issue3719Live
       live "/3814", Issue3814Live
+      live "/3819", Issue3819Live
     end
   end
 
@@ -209,6 +210,7 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
 
     live "/form/feedback", FormFeedbackLive
     live "/errors", ErrorLive
+    live "/colocated", ColocatedLive
 
     scope "/issues" do
       live "/2965", Issue2965Live
@@ -241,6 +243,11 @@ defmodule Phoenix.LiveViewTest.E2E.Endpoint do
 
   plug Plug.Static, from: {:phoenix, "priv/static"}, at: "/assets/phoenix"
   plug Plug.Static, from: {:phoenix_live_view, "priv/static"}, at: "/assets/phoenix_live_view"
+
+  plug Plug.Static,
+    from: Path.join(Mix.Project.build_path(), "phoenix-colocated/phoenix_live_view"),
+    at: "/assets/colocated"
+
   plug Plug.Static, from: System.tmp_dir!(), at: "/tmp"
 
   plug :health_check
@@ -279,6 +286,9 @@ end
   )
 
 IO.puts("Starting e2e server on port #{Phoenix.LiveViewTest.E2E.Endpoint.config(:http)[:port]}")
+
+# we need to manually compile the colocated hooks / js
+Phoenix.LiveView.ColocatedJS.compile()
 
 if not IEx.started?() do
   # when running the test server manually, we halt after

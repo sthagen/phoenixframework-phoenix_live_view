@@ -890,7 +890,7 @@ export default class View {
       const hookName =
         el.getAttribute(`data-phx-${PHX_HOOK}`) ||
         el.getAttribute(this.binding(PHX_HOOK));
-      const hookDefinition = this.liveSocket.getHookCallbacks(hookName);
+      const hookDefinition = this.liveSocket.getHookDefinition(hookName);
 
       if (hookDefinition) {
         if (!el.id) {
@@ -1918,6 +1918,7 @@ export default class View {
       (el) => DOM.isFormInput(el) && el.name && !el.hasAttribute(phxChange),
     );
     if (inputs.length === 0) {
+      callback();
       return;
     }
 
