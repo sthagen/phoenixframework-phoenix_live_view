@@ -3488,16 +3488,19 @@ defmodule Phoenix.Component do
   ## Examples
 
   ```heex
-  <.portal id="modal" target="target-id">
+  <.portal id="modal" target="body">
     ...
   </.portal>
-  <!-- The content of the portal will be rendered in the div below -->
-  <div id="target-id"></div>
   ```
   """
 
   attr.(:id, :string, required: true)
-  attr.(:target, :string, required: true)
+
+  attr.(:target, :string,
+    required: true,
+    doc: "A CSS selector that identifies the target. The target must be unique."
+  )
+
   attr.(:class, :string, default: nil, doc: "The class to apply to the portal wrapper.")
   attr.(:container, :string, default: "div", doc: "The HTML tag to use as the portal wrapper.")
   slot.(:inner_block, required: true)
@@ -3508,14 +3511,10 @@ defmodule Phoenix.Component do
       <%!--
         For correct DOM patching, each portal source (template) must have a single root element,
         which we enforce by wrapping the slot in a div. In the generated CSS for
-        new projects, we include a display: contents rule for data-phx-portal-root.
+        new projects, we include a display: contents rule for data-phx-teleported-src,
+        which is set by the LiveView JS when an element is teleported.
       --%>
-      <.dynamic_tag
-        tag_name={@container}
-        id={"_lv_portal_wrap_" <> @id}
-        class={@class}
-        data-phx-portal-wrapper
-      >
+      <.dynamic_tag tag_name={@container} id={"_lv_portal_wrap_" <> @id} class={@class}>
         {render_slot(@inner_block)}
       </.dynamic_tag>
     </template>
