@@ -37,6 +37,7 @@ import {
   PHX_VIEWPORT_BOTTOM,
   MAX_CHILD_JOIN_ATTEMPTS,
   PHX_LV_PID,
+  PHX_NO_USAGE_TRACKING,
 } from "./constants";
 
 import {
@@ -71,90 +72,6 @@ export const prependFormDataKey = (key, prefix) => {
     baseKey += "[]";
   }
   return baseKey;
-};
-
-const serializeForm = (form, opts, onlyNames = []) => {
-  const { submitter } = opts;
-
-  // We must inject the submitter in the order that it exists in the DOM
-  // relative to other inputs. For example, for checkbox groups, the order must be maintained.
-  let injectedElement;
-  if (submitter && submitter.name) {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    // set the form attribute if the submitter has one;
-    // this can happen if the element is outside the actual form element
-    const formId = submitter.getAttribute("form");
-    if (formId) {
-      input.setAttribute("form", formId);
-    }
-    input.name = submitter.name;
-    input.value = submitter.value;
-    submitter.parentElement.insertBefore(input, submitter);
-    injectedElement = input;
-  }
-
-  const formData = new FormData(form);
-  const toRemove = [];
-
-  formData.forEach((val, key, _index) => {
-    if (val instanceof File) {
-      toRemove.push(key);
-    }
-  });
-
-  // Cleanup after building fileData
-  toRemove.forEach((key) => formData.delete(key));
-
-  const params = new URLSearchParams();
-
-  const { inputsUnused, onlyHiddenInputs } = Array.from(form.elements).reduce(
-    (acc, input) => {
-      const { inputsUnused, onlyHiddenInputs } = acc;
-      const key = input.name;
-      if (!key) {
-        return acc;
-      }
-
-      if (inputsUnused[key] === undefined) {
-        inputsUnused[key] = true;
-      }
-      if (onlyHiddenInputs[key] === undefined) {
-        onlyHiddenInputs[key] = true;
-      }
-
-      const isUsed =
-        DOM.private(input, PHX_HAS_FOCUSED) ||
-        DOM.private(input, PHX_HAS_SUBMITTED);
-      const isHidden = input.type === "hidden";
-      inputsUnused[key] = inputsUnused[key] && !isUsed;
-      onlyHiddenInputs[key] = onlyHiddenInputs[key] && isHidden;
-
-      return acc;
-    },
-    { inputsUnused: {}, onlyHiddenInputs: {} },
-  );
-
-  for (const [key, val] of formData.entries()) {
-    if (onlyNames.length === 0 || onlyNames.indexOf(key) >= 0) {
-      const isUnused = inputsUnused[key];
-      const hidden = onlyHiddenInputs[key];
-      if (isUnused && !(submitter && submitter.name == key) && !hidden) {
-        params.append(prependFormDataKey(key, "_unused_"), "");
-      }
-      if (typeof val === "string") {
-        params.append(key, val);
-      }
-    }
-  }
-
-  // remove the injected element again
-  // (it would be removed by the next dom patch anyway, but this is cleaner)
-  if (submitter && injectedElement) {
-    submitter.parentElement.removeChild(injectedElement);
-  }
-
-  return params.toString();
 };
 
 export default class View {
@@ -1566,6 +1483,107 @@ export default class View {
     return meta;
   }
 
+  serializeForm(form, opts, onlyNames = []) {
+    const { submitter } = opts;
+
+    // We must inject the submitter in the order that it exists in the DOM
+    // relative to other inputs. For example, for checkbox groups, the order must be maintained.
+    let injectedElement;
+    if (submitter && submitter.name) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      // set the form attribute if the submitter has one;
+      // this can happen if the element is outside the actual form element
+      const formId = submitter.getAttribute("form");
+      if (formId) {
+        input.setAttribute("form", formId);
+      }
+      input.name = submitter.name;
+      input.value = submitter.value;
+      submitter.parentElement.insertBefore(input, submitter);
+      injectedElement = input;
+    }
+
+    const formData = new FormData(form);
+    const toRemove = [];
+
+    formData.forEach((val, key, _index) => {
+      if (val instanceof File) {
+        toRemove.push(key);
+      }
+    });
+
+    // Cleanup after building fileData
+    toRemove.forEach((key) => formData.delete(key));
+
+    const params = new URLSearchParams();
+
+    const { inputsUnused, onlyHiddenInputs } = Array.from(form.elements).reduce(
+      (acc, input) => {
+        const { inputsUnused, onlyHiddenInputs } = acc;
+        const key = input.name;
+        if (!key) {
+          return acc;
+        }
+
+        if (inputsUnused[key] === undefined) {
+          inputsUnused[key] = true;
+        }
+        if (onlyHiddenInputs[key] === undefined) {
+          onlyHiddenInputs[key] = true;
+        }
+
+        const inputSkipUnusedField = input.hasAttribute(
+          this.binding(PHX_NO_USAGE_TRACKING),
+        );
+
+        const isUsed =
+          DOM.private(input, PHX_HAS_FOCUSED) ||
+          DOM.private(input, PHX_HAS_SUBMITTED) ||
+          inputSkipUnusedField;
+
+        const isHidden = input.type === "hidden";
+        inputsUnused[key] = inputsUnused[key] && !isUsed;
+        onlyHiddenInputs[key] = onlyHiddenInputs[key] && isHidden;
+
+        return acc;
+      },
+      { inputsUnused: {}, onlyHiddenInputs: {} },
+    );
+
+    const formSkipUnusedFields = form.hasAttribute(
+      this.binding(PHX_NO_USAGE_TRACKING),
+    );
+
+    for (const [key, val] of formData.entries()) {
+      if (onlyNames.length === 0 || onlyNames.indexOf(key) >= 0) {
+        const isUnused = inputsUnused[key];
+        const hidden = onlyHiddenInputs[key];
+        const skipUnusedCheck = formSkipUnusedFields;
+
+        if (
+          !skipUnusedCheck &&
+          isUnused &&
+          !(submitter && submitter.name == key) &&
+          !hidden
+        ) {
+          params.append(prependFormDataKey(key, "_unused_"), "");
+        }
+        if (typeof val === "string") {
+          params.append(key, val);
+        }
+      }
+    }
+
+    // remove the injected element again
+    // (it would be removed by the next dom patch anyway, but this is cleaner)
+    if (submitter && injectedElement) {
+      submitter.parentElement.removeChild(injectedElement);
+    }
+
+    return params.toString();
+  }
+
   pushEvent(type, el, targetCtx, phxEvent, meta, opts = {}, onReply) {
     this.pushWithReply(
       (maybePayload) =>
@@ -1627,9 +1645,11 @@ export default class View {
       serializeOpts.submitter = inputEl;
     }
     if (inputEl.getAttribute(this.binding("change"))) {
-      formData = serializeForm(inputEl.form, serializeOpts, [inputEl.name]);
+      formData = this.serializeForm(inputEl.form, serializeOpts, [
+        inputEl.name,
+      ]);
     } else {
-      formData = serializeForm(inputEl.form, serializeOpts);
+      formData = this.serializeForm(inputEl.form, serializeOpts);
     }
     if (
       DOM.isUploadInput(inputEl) &&
@@ -1806,7 +1826,7 @@ export default class View {
           return this.undoRefs(ref, phxEvent);
         }
         const meta = this.extractMeta(formEl, {}, opts.value);
-        const formData = serializeForm(formEl, { submitter });
+        const formData = this.serializeForm(formEl, { submitter });
         this.pushWithReply(proxyRefGen, "event", {
           type: "form",
           event: phxEvent,
@@ -1824,7 +1844,7 @@ export default class View {
       )
     ) {
       const meta = this.extractMeta(formEl, {}, opts.value);
-      const formData = serializeForm(formEl, { submitter });
+      const formData = this.serializeForm(formEl, { submitter });
       this.pushWithReply(refGenerator, "event", {
         type: "form",
         event: phxEvent,
@@ -2041,6 +2061,19 @@ export default class View {
   }
 
   getFormsForRecovery() {
+    // Form recovery is complex in LiveView:
+    // We want to support nested LiveViews and also provide a good user experience.
+    // Therefore, when the channel rejoins, we copy all forms that are eligible for
+    // recovery to be able to access them later.
+    // Why do we need to copy them? Because when the main LiveView joins, any forms
+    // in nested LiveViews would be lost.
+    //
+    // We should rework this in the future to serialize the form payload here
+    // instead of cloning the DOM nodes, but making this work correctly is tedious,
+    // as sending the correct form payload relies on JS.push to extract values
+    // from JS commands (phx-change={JS.push("event", value: ..., target: ...)}),
+    // as well as view.pushInput, which expects DOM elements.
+
     if (this.joinCount === 0) {
       return {};
     }
@@ -2055,19 +2088,33 @@ export default class View {
           form.getAttribute(this.binding(PHX_AUTO_RECOVER)) !== "ignore",
       )
       .map((form) => {
-        // we perform a shallow clone and manually copy all elements
-        const clonedForm = form.cloneNode(false);
-        // we need to copy the private data as it contains
-        // the information about touched fields
-        DOM.copyPrivates(clonedForm, form);
-        Array.from(form.elements).forEach((el) => {
-          // we need to clone all child nodes as well,
-          // because those could also be selects
+        // We need to clone the whole form, as relying on form.elements can lead to
+        // situations where we have
+        //
+        //   <form><fieldset disabled><input name="foo" value="bar"></fieldset></form>
+        //
+        // and form.elements returns both the fieldset and the input separately.
+        // Because the fieldset is disabled, the input should NOT be sent though.
+        // We can only reliably serialize the form by cloning it fully.
+        const clonedForm = form.cloneNode(true);
+        // we call morphdom to copy any special state
+        // like the selected option of a <select> element;
+        // any also copy over privates (which contain information about touched fields)
+        morphdom(clonedForm, form, {
+          onBeforeElUpdated: (fromEl, toEl) => {
+            DOM.copyPrivates(fromEl, toEl);
+            return true;
+          },
+        });
+        // next up, we also need to clone any elements with form="id" parameter
+        const externalElements = document.querySelectorAll(
+          `[form="${form.id}"]`,
+        );
+        Array.from(externalElements).forEach((el) => {
+          if (form.contains(el)) {
+            return;
+          }
           const clonedEl = el.cloneNode(true);
-          // we call morphdom to copy any special state
-          // like the selected option of a <select> element;
-          // this should be plenty fast as we call it on a small subset of the DOM,
-          // single inputs or a select with children
           morphdom(clonedEl, el);
           DOM.copyPrivates(clonedEl, el);
           clonedForm.appendChild(clonedEl);

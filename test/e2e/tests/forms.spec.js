@@ -263,6 +263,48 @@ for (const path of ["/form/nested", "/form"]) {
           ]),
         );
       });
+
+      test("respects disabled state of a fieldset", async ({ page }) => {
+        let webSocketEvents = [];
+        page.on("websocket", (ws) => {
+          ws.on("framesent", (event) =>
+            webSocketEvents.push({ type: "sent", payload: event.payload }),
+          );
+          ws.on("framereceived", (event) =>
+            webSocketEvents.push({ type: "received", payload: event.payload }),
+          );
+          ws.on("close", () => webSocketEvents.push({ type: "close" }));
+        });
+
+        await page.goto(path + "?disabled-fieldset=true&" + additionalParams);
+        await syncLV(page);
+
+        await page.locator("input[name=c]").fill("hello world");
+        await page.locator("select[name=d]").selectOption("bar");
+        await expect(page.locator("input[name=c]")).toBeFocused();
+        await syncLV(page);
+
+        await page.evaluate(
+          () => new Promise((resolve) => window.liveSocket.disconnect(resolve)),
+        );
+        await expect(page.locator(".phx-loading")).toHaveCount(1);
+
+        webSocketEvents = [];
+        await page.evaluate(() => window.liveSocket.connect());
+        await syncLV(page);
+        await expect(page.locator(".phx-loading")).toHaveCount(0);
+
+        expect(webSocketEvents).toEqual(
+          expect.arrayContaining([
+            { type: "sent", payload: expect.stringContaining("phx_join") },
+            { type: "received", payload: expect.stringContaining("phx_reply") },
+            {
+              type: "sent",
+              payload: expect.stringMatching(/event.*"c=hello\+world&d=bar"/),
+            },
+          ]),
+        );
+      });
     });
   }
 
@@ -604,6 +646,46 @@ test("can dynamically add/remove inputs using checkboxes", async ({ page }) => {
   );
 });
 
+// this happened from v1.0.17 when the sort_params field is nested in a fieldset
+test("form recovery does not create duplicates of dynamically added fields", async ({
+  page,
+}) => {
+  await page.goto("/form/dynamic-inputs");
+  await syncLV(page);
+
+  const formData = () =>
+    page
+      .locator("form")
+      .evaluate((form) => Object.fromEntries(new FormData(form).entries()));
+
+  expect(await formData()).toEqual({
+    "my_form[name]": "",
+    "my_form[users_drop][]": "",
+  });
+
+  await page.locator("#my-form_name").fill("Test");
+  await page.getByRole("button", { name: "add more" }).click();
+  await syncLV(page);
+
+  expect(await formData()).toEqual(
+    expect.objectContaining({
+      "my_form[name]": "Test",
+      "my_form[users][0][name]": "",
+    }),
+  );
+
+  await page.evaluate(
+    () => new Promise((resolve) => window.liveSocket.disconnect(resolve)),
+  );
+
+  await page.evaluate(() => window.liveSocket.connect());
+  await syncLV(page);
+
+  const data = await formData();
+
+  expect("my_form[users][1][name]" in data).toBe(false);
+});
+
 // phx-feedback-for was removed in LiveView 1.0, but we still test the shim applied in
 // test_helper.exs layout for backwards compatibility
 test("phx-no-feedback is applied correctly for backwards-compatible-shims", async ({
@@ -655,4 +737,85 @@ test("phx-no-feedback is applied correctly for backwards-compatible-shims", asyn
   await page.getByRole("button", { name: "Toggle feedback" }).click();
   await syncLV(page);
   await expect(page.locator("[data-feedback-container]")).toBeHidden();
+});
+
+test("phx-no-usage-tracking on a form is applied correctly and no unused fields are sent", async ({
+  page,
+}) => {
+  const webSocketEvents = [];
+
+  page.on("websocket", (ws) => {
+    ws.on("framesent", (event) =>
+      webSocketEvents.push({ type: "sent", payload: event.payload }),
+    );
+  });
+
+  await page.goto("/form?phx-no-usage-tracking-form");
+  await syncLV(page);
+
+  await page.locator("input[name=b]").fill("test");
+  // blur, otherwise the input would not be morphed anyway
+  await page.locator("input[name=b]").blur();
+  await syncLV(page);
+
+  // With phx-no-usage-tracking on the form, no _unused_ parameters should be sent
+  expect(webSocketEvents).toEqual(
+    expect.arrayContaining([
+      {
+        type: "sent",
+        payload: expect.stringMatching(/event.*a=foo&b=test&c=baz&d=foo/),
+      },
+    ]),
+  );
+
+  // Ensure no _unused_ parameters are present in any sent events
+  const sentEvents = webSocketEvents.filter((event) => event.type === "sent");
+  sentEvents.forEach((event) => {
+    expect(event.payload).not.toMatch(/_unused_/);
+  });
+});
+
+test("phx-no-usage-tracking on an input is applied correctly and no unused fields are sent for that specific input", async ({
+  page,
+}) => {
+  const webSocketEvents = [];
+
+  page.on("websocket", (ws) => {
+    ws.on("framesent", (event) =>
+      webSocketEvents.push({ type: "sent", payload: event.payload }),
+    );
+  });
+
+  await page.goto("/form?phx-no-usage-tracking-input");
+  await syncLV(page);
+
+  await page.locator("input[name=b]").fill("test");
+  // blur, otherwise the input would not be morphed anyway
+  await page.locator("input[name=b]").blur();
+  await syncLV(page);
+
+  // Check that the form data and unused parameters are sent correctly
+  expect(webSocketEvents).toEqual(
+    expect.arrayContaining([
+      {
+        type: "sent",
+        payload: expect.stringMatching(
+          /event.*_unused_a=&a=foo&b=test&c=baz&_unused_d=&d=foo/,
+        ),
+      },
+    ]),
+  );
+
+  // Verify specific unused parameter behavior
+  const sentEvents = webSocketEvents.filter((event) => event.type === "sent");
+  const formDataEvent = sentEvents.find((event) =>
+    event.payload.includes("a=foo"),
+  );
+
+  // a and d should have _unused_ parameters (untouched, no phx-no-usage-tracking)
+  expect(formDataEvent.payload).toMatch(/_unused_a=/);
+  expect(formDataEvent.payload).toMatch(/_unused_d=/);
+  // b and c should NOT have _unused_ parameters (b touched, c has phx-no-usage-tracking)
+  expect(formDataEvent.payload).not.toMatch(/_unused_b=/);
+  expect(formDataEvent.payload).not.toMatch(/_unused_c=/);
 });
