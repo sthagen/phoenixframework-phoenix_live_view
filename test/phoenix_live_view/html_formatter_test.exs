@@ -67,9 +67,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     expected = """
     <section>
       <h1>
-        <b>
-          <%= @user.name %>
-        </b>
+        <b><%= @user.name %></b>
       </h1>
     </section>
     """
@@ -85,8 +83,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     expected = """
     <section>
       <h1>
-        <b class="there are several classes">
-        </b>
+        <b class="there are several classes"></b>
       </h1>
     </section>
     """
@@ -297,6 +294,21 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     assert_formatter_doesnt_change(input)
   end
 
+  test "keep attributes in separate lines if written as such" do
+    input = """
+    <Component
+      foo="..."
+      bar="..."
+      baz="..."
+      qux="..."
+    >
+      Foo
+    </Component>
+    """
+
+    assert_formatter_doesnt_change(input)
+  end
+
   test "break attributes into multiple lines in case it doesn't fit 98 characters (default)" do
     input = """
     <div foo="..........." bar="....................." baz="................." qux="....................">
@@ -339,11 +351,9 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
 
     expected = """
     <%= if true do %>
-      <p>do something</p>
-      <p>more stuff</p>
+      <p>do something</p><p>more stuff</p>
     <% else %>
-      <p>do something else</p>
-      <p>more stuff</p>
+      <p>do something else</p><p>more stuff</p>
     <% end %>
     """
 
@@ -481,8 +491,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     <section>
       <%= live_redirect to: "url", id: "link", role: "button" do %>
         <div>
-          <p>content 1</p>
-          <p>content 2</p>
+          <p>content 1</p><p>content 2</p>
         </div>
       <% end %>
       <p><%= @user.name %></p>
@@ -567,9 +576,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       """
       <p>
         first
-        <span>
-          name
-        </span>
+        <span>name</span>
         second
       </p>
       """,
@@ -607,13 +614,9 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       <span><%= @user_a %></span> X <span><%= @user_b %></span>
       """,
       """
-      <span>
-        <%= @user_a %>
-      </span>
+      <span><%= @user_a %></span>
       X
-      <span>
-        <%= @user_b %>
-      </span>
+      <span><%= @user_b %></span>
       """,
       line_length: 5
     )
@@ -1737,9 +1740,32 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       line_length: 20
     )
 
-    assert_formatter_doesnt_change(
+    assert_formatter_output(
       """
       <b>foo</b><i><span><div>bar</div></span></i><span>baz</span>
+      """,
+      """
+      <b>foo</b><i><span><div>
+        bar
+      </div></span></i><span>baz</span>
+      """,
+      line_length: 20
+    )
+  end
+
+  test "does not add space between elements without space" do
+    assert_formatter_doesnt_change(
+      """
+      <span>foo</span><span>bar</span>
+      <span>foo</span><.foo_bar_baz />
+      <.foo_bar_baz /><span>bar</span>
+      <div>foo</div><div>
+        bar
+      </div>
+      <div>foo</div><.foo_bar_baz />
+      <.foo_bar_baz /><div>
+        bar
+      </div>
       """,
       line_length: 20
     )
@@ -1871,9 +1897,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       <script phx-no-format><%= raw(js_code()) %></script>
       """,
       """
-      <script
-        phx-no-format
-      ><%= raw(js_code()) %></script>
+      <script phx-no-format><%= raw(js_code()) %></script>
       """,
       line_length: 5
     )
@@ -2033,9 +2057,7 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       """
       <p>
         foo
-        <strong class="foo bar baz">
-          <%= some_function() %>
-        </strong>
+        <strong class="foo bar baz"><%= some_function() %></strong>
         baz
       </p>
       """,

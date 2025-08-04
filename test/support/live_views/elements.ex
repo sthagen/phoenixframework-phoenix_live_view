@@ -203,6 +203,7 @@ defmodule Phoenix.LiveViewTest.Support.ElementsLive do
       </select>
       <textarea name="hello[textarea]">Text</textarea>
       <textarea name="hello[textarea_empty]"></textarea>
+      <textarea name="hello[textarea_with_newlines]"><%= @multiline_text %></textarea>
       <!-- Mimic textarea from Phoenix.HTML -->
       <textarea name="hello[textarea_nl]">
     Text</textarea>
@@ -232,6 +233,10 @@ defmodule Phoenix.LiveViewTest.Support.ElementsLive do
       </button>
       <button name="button_no_type" value="yes">button_no_type</button>
       <button name="button_no_value">Button No Value</button>
+    </form>
+
+    <form data-name="form-without-id" phx-submit="form-submit">
+      <button name="button" type="submit">button</button>
     </form>
 
     <form
@@ -274,6 +279,7 @@ defmodule Phoenix.LiveViewTest.Support.ElementsLive do
       socket
       |> assign(:event, nil)
       |> assign(:trigger_action, false)
+      |> assign(:multiline_text, "This is a test.\nIt has multiple\nlines of text.")
 
     {:ok, socket}
   end

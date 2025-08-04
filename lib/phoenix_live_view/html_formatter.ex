@@ -275,17 +275,6 @@ defmodule Phoenix.LiveView.HTMLFormatter do
   defguard is_tag_open(tag_type)
            when tag_type in [:slot, :remote_component, :local_component, :tag]
 
-  # Reference for all inline elements so that we can tell the formatter to not
-  # force a line break. This list has been taken from here:
-  #
-  # https://web.archive.org/web/20220405120608/https://developer.mozilla.org/en-US/docs/Web/HTML/Inline_elements#list_of_inline_elements
-  #
-  # A notable omission is `<script>`, which is handled separately in `html_algebra.ex`.
-  @inline_tags ~w(a abbr acronym audio b bdi bdo big br button canvas cite
-  code data datalist del dfn em embed i iframe img input ins kbd label map
-  mark meter noscript object output picture progress q ruby s samp select slot
-  small span strong sub sup svg template textarea time u tt var video wbr)
-
   # Default line length to be used in case nothing is specified in the `.formatter.exs` options.
   @default_line_length 98
 
@@ -303,7 +292,6 @@ defmodule Phoenix.LiveView.HTMLFormatter do
     else
       line_length = opts[:heex_line_length] || opts[:line_length] || @default_line_length
       newlines = :binary.matches(source, ["\r\n", "\n"])
-      inline_matcher = opts[:inline_matcher] || ["link", "button"]
 
       opts =
         Keyword.update(opts, :attribute_formatters, %{}, fn formatters ->
@@ -320,11 +308,7 @@ defmodule Phoenix.LiveView.HTMLFormatter do
       formatted =
         source
         |> tokenize()
-        |> to_tree([], [], %{
-          source: {source, newlines},
-          inline_elements: @inline_tags,
-          inline_matcher: inline_matcher
-        })
+        |> to_tree([], [], %{source: {source, newlines}})
         |> case do
           {:ok, nodes} ->
             nodes
@@ -505,7 +489,12 @@ defmodule Phoenix.LiveView.HTMLFormatter do
          [{:comment, start_text, upper_buffer} | stack],
          opts
        ) do
-    buffer = Enum.reverse([{:text, String.trim_trailing(text), %{}} | buffer])
+    meta = %{
+      newlines_before_text: count_newlines_before_text(text),
+      newlines_after_text: count_newlines_after_text(text)
+    }
+
+    buffer = Enum.reverse([{:text, String.trim_trailing(text), meta} | buffer])
     text = {:text, String.trim_leading(start_text), %{}}
     to_tree(tokens, [{:html_comment, [text | buffer]} | upper_buffer], stack, opts)
   end
@@ -527,12 +516,12 @@ defmodule Phoenix.LiveView.HTMLFormatter do
   defp to_tree([{:text, text, _meta} | tokens], buffer, stack, opts) do
     buffer = may_set_preserve_on_block(buffer, text)
 
-    if line_html_comment?(text) do
-      to_tree(tokens, [{:comment, text} | buffer], stack, opts)
-    else
-      meta = %{newlines: count_newlines_before_text(text)}
-      to_tree(tokens, [{:text, text, meta} | buffer], stack, opts)
-    end
+    meta = %{
+      newlines_before_text: count_newlines_before_text(text),
+      newlines_after_text: count_newlines_after_text(text)
+    }
+
+    to_tree(tokens, [{:text, text, meta} | buffer], stack, opts)
   end
 
   defp to_tree([{:body_expr, value, meta} | tokens], buffer, stack, opts) do
@@ -557,25 +546,13 @@ defmodule Phoenix.LiveView.HTMLFormatter do
          opts
        ) do
     {mode, block} =
-      cond do
-        tag_name in ["pre", "textarea"] or contains_special_attrs?(attrs) ->
-          content =
-            content_from_source(opts.source, open_meta.inner_location, close_meta.inner_location)
+      if tag_name in ["pre", "textarea"] or contains_special_attrs?(attrs) do
+        content =
+          content_from_source(opts.source, open_meta.inner_location, close_meta.inner_location)
 
-          {:preserve, [{:text, content, %{newlines: 0}}]}
-
-        preceeded_by_non_white_space?(upper_buffer) ->
-          {:preserve, Enum.reverse(reversed_buffer)}
-
-        inline?(tag_name, opts.inline_elements, opts.inline_matcher) ->
-          {:inline,
-           reversed_buffer
-           |> may_set_preserve_on_text(:last)
-           |> Enum.reverse()
-           |> may_set_preserve_on_text(:first)}
-
-        true ->
-          {:block, Enum.reverse(reversed_buffer)}
+        {:preserve, [{:text, content, %{newlines_before_text: 0, newlines_after_text: 0}}]}
+      else
+        {:normal, Enum.reverse(reversed_buffer)}
       end
 
     tag_block = {:tag_block, tag_name, attrs, block, %{mode: mode}}
@@ -639,11 +616,6 @@ defmodule Phoenix.LiveView.HTMLFormatter do
 
   # -- HELPERS
 
-  defp inline?(tag_name, inline_elements, inline_matcher) do
-    tag_name in inline_elements or
-      Enum.any?(inline_matcher, &(tag_name =~ &1))
-  end
-
   defp count_newlines_before_text(binary),
     do: count_newlines_until_text(binary, 0, 0, 1)
 
@@ -661,27 +633,6 @@ defmodule Phoenix.LiveView.HTMLFormatter do
       _ -> counter
     end
   end
-
-  # We just want to handle as :comment when the whole line is a HTML comment.
-  #
-  #   <!-- Modal content -->
-  #   <%= render_slot(@inner_block) %>
-  #
-  # Therefore the case above will stay as is. Otherwise it would put them in the
-  # same line.
-  defp line_html_comment?(text) do
-    trimmed_text = String.trim(text)
-    String.starts_with?(trimmed_text, "<!--") and String.ends_with?(trimmed_text, "-->")
-  end
-
-  # In case the opening tag is immediately preceeded by non whitespace text,
-  # or an interpolation, we will set it as preserve.
-  defp preceeded_by_non_white_space?([{:text, text, _meta} | _]),
-    do: String.trim_leading(text) != "" and :binary.last(text) not in ~c"\s\t\n\r"
-
-  defp preceeded_by_non_white_space?([{:body_expr, _, _} | _]), do: true
-  defp preceeded_by_non_white_space?([{:eex, _, _} | _]), do: true
-  defp preceeded_by_non_white_space?(_), do: false
 
   # In case the closing tag is immediatelly followed by non whitespace text,
   # we want to set mode as preserve.
@@ -704,35 +655,6 @@ defmodule Phoenix.LiveView.HTMLFormatter do
   end
 
   defp set_preserve_on_block(buffer), do: buffer
-
-  defp may_set_preserve_on_text([{:text, text, meta} | buffer], where) do
-    {meta, text} =
-      if whitespace_around?(text, where) do
-        {Map.put(meta, :mode, :preserve), cleanup_extra_spaces(text, where)}
-      else
-        {meta, text}
-      end
-
-    [{:text, text, meta} | buffer]
-  end
-
-  defp may_set_preserve_on_text(buffer, _where), do: buffer
-
-  defp whitespace_around?(text, :first) do
-    :binary.first(text) in ~c"\s\t" and count_newlines_before_text(text) == 0
-  end
-
-  defp whitespace_around?(text, :last) do
-    :binary.last(text) in ~c"\s\t" and count_newlines_after_text(text) == 0
-  end
-
-  defp cleanup_extra_spaces(text, :first) do
-    " " <> String.trim_leading(text)
-  end
-
-  defp cleanup_extra_spaces(text, :last) do
-    String.trim_trailing(text) <> " "
-  end
 
   defp contains_special_attrs?(attrs) do
     Enum.any?(attrs, fn
