@@ -4060,7 +4060,7 @@ var View = class _View {
     };
     this.stopCallback = function() {
     };
-    this.pendingJoinOps = this.parent ? null : [];
+    this.pendingJoinOps = [];
     this.viewHooks = {};
     this.formSubmits = [];
     this.children = this.parent ? null : {};
@@ -4347,6 +4347,12 @@ var View = class _View {
     });
   }
   applyJoinPatch(live_patch, html, streams, events) {
+    if (this.joinCount > 1) {
+      if (this.pendingJoinOps.length) {
+        this.pendingJoinOps.forEach((cb) => typeof cb === "function" && cb());
+        this.pendingJoinOps = [];
+      }
+    }
     this.attachTrueDocEl();
     const patch = new DOMPatch(this, this.el, this.id, html, streams, null);
     patch.markPrunableContentForRemoval();
@@ -4686,7 +4692,11 @@ var View = class _View {
   onChannel(event, cb) {
     this.liveSocket.onChannel(this.channel, event, (resp) => {
       if (this.isJoinPending()) {
-        this.root.pendingJoinOps.push([this, () => cb(resp)]);
+        if (this.joinCount > 1) {
+          this.pendingJoinOps.push(() => cb(resp));
+        } else {
+          this.root.pendingJoinOps.push([this, () => cb(resp)]);
+        }
       } else {
         this.liveSocket.requestDOMUpdate(() => cb(resp));
       }
@@ -4794,21 +4804,19 @@ var View = class _View {
     }
     this.log("error", () => ["unable to join", resp]);
     if (this.isMain()) {
-      this.displayError([
-        PHX_LOADING_CLASS,
-        PHX_ERROR_CLASS,
-        PHX_SERVER_ERROR_CLASS
-      ]);
+      this.displayError(
+        [PHX_LOADING_CLASS, PHX_ERROR_CLASS, PHX_SERVER_ERROR_CLASS],
+        { unstructuredError: resp, errorKind: "server" }
+      );
       if (this.liveSocket.isConnected()) {
         this.liveSocket.reloadWithJitter(this);
       }
     } else {
       if (this.joinAttempts >= MAX_CHILD_JOIN_ATTEMPTS) {
-        this.root.displayError([
-          PHX_LOADING_CLASS,
-          PHX_ERROR_CLASS,
-          PHX_SERVER_ERROR_CLASS
-        ]);
+        this.root.displayError(
+          [PHX_LOADING_CLASS, PHX_ERROR_CLASS, PHX_SERVER_ERROR_CLASS],
+          { unstructuredError: resp, errorKind: "server" }
+        );
         this.log("error", () => [
           `giving up trying to mount after ${MAX_CHILD_JOIN_ATTEMPTS} tries`,
           resp
@@ -4818,11 +4826,10 @@ var View = class _View {
       const trueChildEl = dom_default.byId(this.el.id);
       if (trueChildEl) {
         dom_default.mergeAttrs(trueChildEl, this.el);
-        this.displayError([
-          PHX_LOADING_CLASS,
-          PHX_ERROR_CLASS,
-          PHX_SERVER_ERROR_CLASS
-        ]);
+        this.displayError(
+          [PHX_LOADING_CLASS, PHX_ERROR_CLASS, PHX_SERVER_ERROR_CLASS],
+          { unstructuredError: resp, errorKind: "server" }
+        );
         this.el = trueChildEl;
       } else {
         this.destroy();
@@ -4849,24 +4856,22 @@ var View = class _View {
     }
     if (!this.liveSocket.isUnloaded()) {
       if (this.liveSocket.isConnected()) {
-        this.displayError([
-          PHX_LOADING_CLASS,
-          PHX_ERROR_CLASS,
-          PHX_SERVER_ERROR_CLASS
-        ]);
+        this.displayError(
+          [PHX_LOADING_CLASS, PHX_ERROR_CLASS, PHX_SERVER_ERROR_CLASS],
+          { unstructuredError: reason, errorKind: "server" }
+        );
       } else {
-        this.displayError([
-          PHX_LOADING_CLASS,
-          PHX_ERROR_CLASS,
-          PHX_CLIENT_ERROR_CLASS
-        ]);
+        this.displayError(
+          [PHX_LOADING_CLASS, PHX_ERROR_CLASS, PHX_CLIENT_ERROR_CLASS],
+          { unstructuredError: reason, errorKind: "client" }
+        );
       }
     }
   }
-  displayError(classes) {
+  displayError(classes, details = {}) {
     if (this.isMain()) {
       dom_default.dispatchEvent(window, "phx:page-loading-start", {
-        detail: { to: this.href, kind: "error" }
+        detail: { to: this.href, kind: "error", ...details }
       });
     }
     this.showLoader();
