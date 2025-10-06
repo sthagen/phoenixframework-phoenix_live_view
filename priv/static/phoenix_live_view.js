@@ -4233,7 +4233,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       this.log(type, () => ["", clone(rawDiff)]);
       const { diff, reply, events, title } = Rendered.extract(rawDiff);
       callback({ diff, reply, events });
-      if (typeof title === "string" || type == "mount") {
+      if (typeof title === "string" || type == "mount" && this.isMain()) {
         window.requestAnimationFrame(() => dom_default.putTitle(title));
       }
     }
@@ -4496,7 +4496,9 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       const template = document.createElement("template");
       template.innerHTML = html;
       dom_default.all(template.content, `[${PHX_PORTAL}]`).forEach((portalTemplate) => {
-        template.content.appendChild(portalTemplate.content);
+        template.content.firstElementChild.appendChild(
+          portalTemplate.content.firstElementChild
+        );
       });
       const rootEl = template.content.firstElementChild;
       rootEl.id = this.id;

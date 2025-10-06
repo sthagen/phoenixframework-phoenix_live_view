@@ -317,7 +317,7 @@ export default class View {
     this.log(type, () => ["", clone(rawDiff)]);
     const { diff, reply, events, title } = Rendered.extract(rawDiff);
     callback({ diff, reply, events });
-    if (typeof title === "string" || type == "mount") {
+    if (typeof title === "string" || (type == "mount" && this.isMain())) {
       window.requestAnimationFrame(() => DOM.putTitle(title));
     }
   }
@@ -647,7 +647,9 @@ export default class View {
     // we special case <.portal> here and teleport it into our temporary DOM for recovery
     // as we'd otherwise not find teleported forms
     DOM.all(template.content, `[${PHX_PORTAL}]`).forEach((portalTemplate) => {
-      template.content.appendChild(portalTemplate.content);
+      template.content.firstElementChild.appendChild(
+        portalTemplate.content.firstElementChild,
+      );
     });
 
     // because we work with a template element, we must manually copy the attributes
