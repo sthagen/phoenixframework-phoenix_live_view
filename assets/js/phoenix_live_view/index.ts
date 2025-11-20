@@ -10,6 +10,7 @@ import OriginalLiveSocket, { isUsedInput } from "./live_socket";
 import DOM from "./dom";
 import { ViewHook } from "./view_hook";
 import View from "./view";
+import { logError } from "./utils";
 
 import type { LiveSocketJSCommands } from "./js_commands";
 import type { Hook, HooksOptions } from "./view_hook";
@@ -146,6 +147,27 @@ export interface LiveSocketOptions {
       query: string,
       defaultQuery: () => Element[],
     ) => Element[];
+    /**
+     * When defined, called with a start callback that needs to be called
+     * to perform the actual patch. Failing to call the start callback causes
+     * the page to become stuck.
+     *
+     * This can be used to delay patches in order to perform view transitions,
+     * for example:
+     *
+     * ```javascript
+     * let liveSocket = new LiveSocket("/live", Socket, {
+     *   dom: {
+     *     onDocumentPatch(start) {
+     *       document.startViewTransition(start);
+     *     }
+     *   }
+     * })
+     * ```
+     *
+     * It is strongly advised to call start as quickly as possible.
+     */
+    onDocumentPatch?: (start: () => void) => void;
     /**
      * Called immediately before a DOM patch is applied.
      */
@@ -306,6 +328,13 @@ function createHook(el: HTMLElement, callbacks: Hook): ViewHook {
   let existingHook = DOM.getCustomElHook(el);
   if (existingHook) {
     return existingHook;
+  }
+
+  if (!el.hasAttribute("id")) {
+    logError(
+      "Elements passed to createHook need to have a unique id attribute",
+      el,
+    );
   }
 
   let hook = new ViewHook(View.closestView(el), el, callbacks);
