@@ -371,7 +371,7 @@ export default class View {
     }
 
     if (liveview_version !== this.liveSocket.version()) {
-      console.error(
+      console.warn(
         `LiveView asset version mismatch. JavaScript version ${this.liveSocket.version()} vs. server ${liveview_version}. To avoid issues, please ensure that your assets use the same version as the server.`,
       );
     }
@@ -1080,14 +1080,17 @@ export default class View {
         `failed mount with ${resp.status}. Falling back to page reload`,
         resp,
       ]);
-      this.onRedirect({ to: this.root.href, reloadToken: resp.token });
+      this.onRedirect({
+        to: this.liveSocket.main.href,
+        reloadToken: resp.token,
+      });
       return;
     } else if (resp.reason === "unauthorized" || resp.reason === "stale") {
       this.log("error", () => [
         "unauthorized live_redirect. Falling back to page request",
         resp,
       ]);
-      this.onRedirect({ to: this.root.href, flash: this.flash });
+      this.onRedirect({ to: this.liveSocket.main.href, flash: this.flash });
       return;
     }
     if (resp.redirect || resp.live_redirect) {
