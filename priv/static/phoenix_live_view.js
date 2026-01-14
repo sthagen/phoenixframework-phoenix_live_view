@@ -1287,6 +1287,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         return this.el.getAttribute(PHX_PREFLIGHTED_REFS);
       },
       mounted() {
+        this.js().ignoreAttributes(this.el, ["value"]);
         this.preflightedWas = this.preflightedRefs();
       },
       updated() {
@@ -1958,10 +1959,18 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         options = {};
       }
       if (typeof toNode === "string") {
-        if (fromNode.nodeName === "#document" || fromNode.nodeName === "HTML" || fromNode.nodeName === "BODY") {
+        if (fromNode.nodeName === "#document" || fromNode.nodeName === "HTML") {
           var toNodeHtml = toNode;
           toNode = doc.createElement("html");
           toNode.innerHTML = toNodeHtml;
+        } else if (fromNode.nodeName === "BODY") {
+          var toNodeBody = toNode;
+          toNode = doc.createElement("html");
+          toNode.innerHTML = toNodeBody;
+          var bodyElement = toNode.querySelector("body");
+          if (bodyElement) {
+            toNode = bodyElement;
+          }
         } else {
           toNode = toElement(toNode);
         }
@@ -2496,11 +2505,6 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
             if (fromEl.hasAttribute(PHX_REF_SRC)) {
               const ref = new ElementRef(fromEl);
               if (ref.lockRef && (!this.undoRef || !ref.isLockUndoneBy(this.undoRef))) {
-                if (dom_default.isUploadInput(fromEl)) {
-                  dom_default.mergeAttrs(fromEl, toEl, { isIgnored: true });
-                  this.trackBefore("updated", fromEl, toEl);
-                  updates.push(fromEl);
-                }
                 dom_default.applyStickyOperations(fromEl);
                 const isLocked = fromEl.hasAttribute(PHX_REF_LOCK);
                 const clone2 = isLocked ? dom_default.private(fromEl, PHX_REF_LOCK) || fromEl.cloneNode(true) : null;
