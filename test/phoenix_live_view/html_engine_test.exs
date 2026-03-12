@@ -2091,7 +2091,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
 
   describe ":if attr" do
     test "handle :if attr on HTML element" do
-      assigns = %{flag: true}
+      assigns = %{flag: Process.get(:flag, true)}
 
       assert compile("""
                <div :if={@flag} id="test">yes</div>
@@ -2103,7 +2103,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
 
     test "handle :if attr on self closed HTML element" do
-      assigns = %{flag: true}
+      assigns = %{flag: Process.get(:flag, true)}
 
       assert compile("""
                <div :if={@flag} id="test" />
@@ -2130,7 +2130,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
 
     test ":if in components" do
-      assigns = %{flag: true}
+      assigns = %{flag: Process.get(:flag, true)}
 
       assert compile("""
              <.local_function_component value="123" :if={@flag} />
@@ -2177,7 +2177,7 @@ defmodule Phoenix.LiveView.HTMLEngineTest do
     end
 
     test ":if in slots" do
-      assigns = %{flag: true}
+      assigns = %{flag: Process.get(:flag, true)}
 
       assert compile("""
              <Phoenix.LiveView.HTMLEngineTest.slot_if value={0}>
