@@ -6,6 +6,8 @@ defmodule Phoenix.LiveViewTest.TreeDOM do
 
   alias Phoenix.LiveViewTest.DOM
 
+  import Phoenix.LiveViewTest, only: [configured_test_warning: 1]
+
   @doc """
   Filters nodes according to `fun`. Walks the tree in a post-walk manner, visiting children before parents.
   """
@@ -285,9 +287,15 @@ defmodule Phoenix.LiveViewTest.TreeDOM do
 
     cids_after = component_ids(id, new_html)
 
-    if is_function(error_reporter, 1) do
-      detect_duplicate_ids(new_html, error_reporter)
-      detect_duplicate_components(new_html, cids_after, error_reporter)
+    if is_function(error_reporter, 2) do
+      if configured_test_warning(:duplicate_id) != :ignore,
+        do: detect_duplicate_ids(new_html, error_reporter)
+
+      if configured_test_warning(:duplicate_live_component) != :ignore,
+        do: detect_duplicate_components(new_html, cids_after, error_reporter)
+
+      if configured_test_warning(:missing_form_id) != :ignore,
+        do: detect_forms_without_id(new_html, error_reporter)
     end
 
     {new_html, cids_before -- cids_after}
@@ -305,7 +313,7 @@ defmodule Phoenix.LiveViewTest.TreeDOM do
     case attribute(node, "id") do
       id when not is_nil(id) ->
         if MapSet.member?(ids, id) do
-          error_reporter.("""
+          error_reporter.(:duplicate_id, """
           Duplicate id found while testing LiveView: #{id}
 
           #{inspect_html(filter(tree, fn node -> attribute(node, "id") == id end))}
@@ -330,7 +338,7 @@ defmodule Phoenix.LiveViewTest.TreeDOM do
     |> Enum.frequencies()
     |> Enum.each(fn {cid, count} ->
       if count > 1 do
-        error_reporter.("""
+        error_reporter.(:duplicate_live_component, """
         Duplicate live component found while testing LiveView:
 
         #{inspect_html(filter(tree, fn node -> attribute(node, @phx_component) == to_string(cid) end))}
@@ -342,6 +350,36 @@ defmodule Phoenix.LiveViewTest.TreeDOM do
       end
     end)
   end
+
+  defp detect_forms_without_id([_ | _] = nodes, error_reporter) do
+    Enum.each(nodes, &detect_forms_without_id(&1, error_reporter))
+  end
+
+  defp detect_forms_without_id({"form", attrs, _children} = node, error_reporter) do
+    case {attribute(node, "id"), attribute(node, "phx-change"),
+          attribute(node, "phx-ignore-missing-id")} do
+      {nil, phx_change, nil} when is_binary(phx_change) ->
+        error_reporter.(:missing_form_id, """
+        Detected a form with phx-change but missing id:
+
+        #{inspect_html({"form", attrs, []})}
+
+        Without an id, LiveView will not be able to perform form recovery,
+        for more information see:
+
+        https://hexdocs.pm/phoenix_live_view/form-bindings.html#recovery-following-crashes-or-disconnects
+        """)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp detect_forms_without_id({_tag_name, _attrs, children}, error_reporter) do
+    detect_forms_without_id(children, error_reporter)
+  end
+
+  defp detect_forms_without_id(_node, _error_reporter), do: :ok
 
   def component_ids(id, html_tree) do
     by_id!(html_tree, id)
