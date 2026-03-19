@@ -1552,6 +1552,16 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     """)
   end
 
+  test "avoids additional whitespace on text followed by interpolation" do
+    assert_formatter_doesnt_change("""
+    <span class="opacity-70"> -  {@name}</span>
+    """)
+
+    assert_formatter_doesnt_change("""
+    <span class="opacity-70">{@name}  - </span>
+    """)
+  end
+
   test "treats components with link or button in their name as inline" do
     assert_formatter_doesnt_change("""
     <.styled_link> Foo: </.styled_link>
