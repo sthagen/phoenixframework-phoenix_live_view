@@ -412,18 +412,19 @@ defmodule Phoenix.LiveView.HTMLFormatter do
     end
   end
 
-  defp leading_whitespace(binary, len \\ 0) do
-    try do
-      :binary.at(binary, len)
-    rescue
-      _ -> binary_part(binary, 0, len)
-    else
-      char when char in [?\s, ?\t, ?\n, ?\r] -> leading_whitespace(binary, len + 1)
-      _ -> binary_part(binary, 0, len)
-    end
+  defp leading_whitespace(binary) do
+    binary_part(binary, 0, count_leading_whitespace(binary, 0))
   end
 
-  defp trailing_whitespace(binary), do: trailing_whitespace(binary, byte_size(binary) - 1, 0)
+  defp count_leading_whitespace(<<char, rest::binary>>, count) when char in ~c"\s\t\n\r",
+    do: count_leading_whitespace(rest, count + 1)
+
+  defp count_leading_whitespace(_rest, count),
+    do: count
+
+  defp trailing_whitespace(binary) do
+    trailing_whitespace(binary, byte_size(binary) - 1, 0)
+  end
 
   defp trailing_whitespace(binary, pos, len) do
     try do
