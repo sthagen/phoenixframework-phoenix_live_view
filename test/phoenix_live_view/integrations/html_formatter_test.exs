@@ -144,4 +144,12 @@ defmodule Phoenix.LiveView.Integrations.HTMLFormatterTest do
 
     assert_mix_format_output(input, expected, line_length: 20, heex_line_length: 80)
   end
+
+  test "mix format is idempotent for inline text before a body expression" do
+    input = """
+    <span class="opacity-70"> -   {@name}</span>
+    """
+
+    assert_mix_format_output(input, input)
+  end
 end

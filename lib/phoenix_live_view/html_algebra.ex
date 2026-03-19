@@ -153,11 +153,7 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
       # We do not insert breaks when preserving.
       # We may insert spaces though if both sides are text.
       block_preserve?(prev_node) or block_preserve?(next_node) ->
-        if text_ends_with_space?(prev_node) or text_starts_with_space?(next_node) do
-          " "
-        else
-          ""
-        end
+        preserved_inline_break(prev_node, next_node)
 
       # If we have a block followed by anything that is not a tag,
       # we force a break.
@@ -167,6 +163,19 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
       (text_ends_with_space?(prev_node) or text_starts_with_space?(next_node)) and
           not text_preserve?(prev_node) ->
         flex_break(" ")
+
+      true ->
+        ""
+    end
+  end
+
+  defp preserved_inline_break(prev_node, next_node) do
+    cond do
+      preserved_text_owns_spacing?(prev_node, next_node) ->
+        ""
+
+      whitespace_between?(prev_node, next_node) ->
+        " "
 
       true ->
         ""
@@ -202,6 +211,15 @@ defmodule Phoenix.LiveView.HTMLAlgebra do
 
   defp text_preserve?({:text, _, %{mode: :preserve}}), do: true
   defp text_preserve?(_), do: false
+
+  defp preserved_text_owns_spacing?(prev_node, next_node) do
+    (text_preserve?(prev_node) or text_preserve?(next_node)) and
+      whitespace_between?(prev_node, next_node)
+  end
+
+  defp whitespace_between?(prev_node, next_node) do
+    text_ends_with_space?(prev_node) or text_starts_with_space?(next_node)
+  end
 
   defp to_algebra({:html_comment, block}, context) do
     children = block_to_algebra(block, %{context | mode: :preserve})
