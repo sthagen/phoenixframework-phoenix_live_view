@@ -1552,6 +1552,16 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
     """)
   end
 
+  test "avoids additional whitespace on text followed by interpolation" do
+    assert_formatter_doesnt_change("""
+    <span class="opacity-70"> -  {@name}</span>
+    """)
+
+    assert_formatter_doesnt_change("""
+    <span class="opacity-70">{@name}  - </span>
+    """)
+  end
+
   test "treats components with link or button in their name as inline" do
     assert_formatter_doesnt_change("""
     <.styled_link> Foo: </.styled_link>
@@ -2343,6 +2353,69 @@ defmodule Phoenix.LiveView.HTMLFormatterTest do
       <p>Text</p>
       """
     )
+  end
+
+  test "formats HTML comments evenly with the block they belong to" do
+    spaces = String.duplicate(" ", 10)
+
+    input = """
+    <section>
+    <!-- First section -->
+      <div>
+        <h1>Hello</h1>
+      </div>
+      #{spaces}
+      <!-- Second section -->
+      <div>
+        <h1>World</h1>
+      </div>
+      #{spaces}
+      <div>
+        <h1>!</h1>
+      </div>
+
+      #{spaces}
+    <!-- Indentation to be corrected -->
+
+      <div>
+        <button>Click here</button>
+      </div>
+      <!-- No line break before this one -->
+      <div>
+        <button>Cancel</button>
+      </div>
+    </section>
+    """
+
+    expected = """
+    <section>
+      <!-- First section -->
+      <div>
+        <h1>Hello</h1>
+      </div>
+
+      <!-- Second section -->
+      <div>
+        <h1>World</h1>
+      </div>
+
+      <div>
+        <h1>!</h1>
+      </div>
+
+      <!-- Indentation to be corrected -->
+
+      <div>
+        <button>Click here</button>
+      </div>
+      <!-- No line break before this one -->
+      <div>
+        <button>Cancel</button>
+      </div>
+    </section>
+    """
+
+    assert_formatter_output(input, expected)
   end
 
   test "handle EEx comments" do
