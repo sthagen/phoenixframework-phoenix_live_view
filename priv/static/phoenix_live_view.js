@@ -1477,6 +1477,12 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
         window.addEventListener("scroll", this.onScroll);
       }
     },
+    updated() {
+      if (!this.scrollContainer.isConnected) {
+        this.destroyed();
+        this.mounted();
+      }
+    },
     destroyed() {
       if (this.scrollContainer) {
         this.scrollContainer.removeEventListener("scroll", this.onScroll);
