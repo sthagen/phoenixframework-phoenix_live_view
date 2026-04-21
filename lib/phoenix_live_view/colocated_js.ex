@@ -89,7 +89,7 @@ defmodule Phoenix.LiveView.ColocatedJS do
   JavaScript by setting the `:target_directory` option in your `config.exs`:
 
   ```elixir
-  config :phoenix_live_view, :colocated_js,
+  config :phoenix_live_view, :colocated_assets,
     target_directory: Path.expand("../assets/node_modules/phoenix-colocated", __DIR__)
   ```
 
