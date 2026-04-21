@@ -1332,15 +1332,15 @@ var top = (scrollContainer) => {
 };
 var isAtViewportTop = (el, scrollContainer) => {
   const rect = el.getBoundingClientRect();
-  return Math.ceil(rect.top) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.top) <= bottom(scrollContainer);
+  return Math.ceil(rect.top) >= top(scrollContainer) && Math.floor(rect.top) <= bottom(scrollContainer);
 };
 var isAtViewportBottom = (el, scrollContainer) => {
   const rect = el.getBoundingClientRect();
-  return Math.ceil(rect.bottom) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.bottom) <= bottom(scrollContainer);
+  return Math.ceil(rect.bottom) >= top(scrollContainer) && Math.floor(rect.bottom) <= bottom(scrollContainer);
 };
 var isWithinViewport = (el, scrollContainer) => {
   const rect = el.getBoundingClientRect();
-  return Math.ceil(rect.top) >= top(scrollContainer) && Math.ceil(rect.left) >= 0 && Math.floor(rect.top) <= bottom(scrollContainer);
+  return Math.ceil(rect.top) >= top(scrollContainer) && Math.floor(rect.top) <= bottom(scrollContainer);
 };
 Hooks.InfiniteScroll = {
   mounted() {
