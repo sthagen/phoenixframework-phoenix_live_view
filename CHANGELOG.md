@@ -95,6 +95,25 @@ Here's an example that shows the debug annotations:
 
 The comments can be disabled with `debug_heex_annotations` and the `data-phx-loc` attributes with `debug_attributes`.
 
+## Granular configuration for test warnings
+
+LiveView includes some built in checks that run on the DOM when testing. For example,
+tests will raise an exception if a duplicate ID is detected. We added a new check for forms
+with `phx-change` but missing `id` attribute, because without an `id` [form recovery](https://hexdocs.pm/phoenix_live_view/form-bindings.html#recovery-following-crashes-or-disconnects)
+does not work. Since the severity of that check is different compared to a duplicate ID,
+LiveView now allows you to configure what should happen for each check:
+
+```elixir
+config :phoenix_live_view, :test_warnings,
+  duplicate_id: :warn, # one of :warn, :raise, :ignore
+  ...
+```
+
+By default, a form without an ID will now emit a warning. You can opt out of this check per form
+by setting `phx-ignore-missing-id` or disable it globally with the `:missing_form_id` warning option.
+
+See the module documentation or `Phoenix.LiveViewTest` for more information.
+
 ## v1.2.0-rc.0 (Unreleased)
 
 ### Enhancements
@@ -108,6 +127,7 @@ The comments can be disabled with `debug_heex_annotations` and the `data-phx-loc
 * HEEx: Allow to opt out of debug annotations for a module ([#4119](https://github.com/phoenixframework/phoenix_live_view/pull/4119))
 * HEEx: warn when missing a space between attributes ([#3999](https://github.com/phoenixframework/phoenix_live_view/issues/3999))
 * HTMLFormatter: Add `TagFormatter` behaviour for formatting `<style>` and `<script>` tags ([#4140](https://github.com/phoenixframework/phoenix_live_view/pull/4140))
+* Add configuration option for `:test_warnings` and warn for forms without an ID by default ([#4128](https://github.com/phoenixframework/phoenix_live_view/pull/4128))
 * Performance optimizations in diffing hot path (Thank you [@preciz](https://github.com/preciz)!)
 
 ## v1.1
