@@ -125,15 +125,10 @@ defmodule Phoenix.LiveView.ColocatedAssets do
   end
 
   defp filter_colocated(data) do
-    for {macro_component, entries} <- data do
-      Enum.flat_map(entries, fn data ->
-        case data do
-          %Entry{} = d -> [%{d | component: macro_component}]
-          _ -> []
-        end
-      end)
+    for {macro_component, entries} <- data,
+        %Entry{} = d <- entries do
+      %{d | component: macro_component}
     end
-    |> List.flatten()
   end
 
   defp maybe_link_node_modules! do
