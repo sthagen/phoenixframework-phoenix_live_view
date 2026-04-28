@@ -114,6 +114,15 @@ by setting `phx-ignore-missing-id` or disable it globally with the `:missing_for
 
 See the module documentation or `Phoenix.LiveViewTest` for more information.
 
+## v1.2.0-rc.1 (Unreleased)
+
+### Enhancements
+
+* Align `Phoenix.Component` global attributes list with [reference list from MDN](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes) ([#4207](https://github.com/phoenixframework/phoenix_live_view/pull/4207)). If you relied on one of the removed attributes, use the `include` option instead. For example:
+  ```elixir
+  attr :rest, :global, include: ~w(width height)
+  ```
+
 ## v1.2.0-rc.0 (2026-04-23)
 
 ### Enhancements
