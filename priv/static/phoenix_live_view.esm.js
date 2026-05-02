@@ -1033,11 +1033,13 @@ var LiveUploader = class _LiveUploader {
       return file._phxRef;
     }
   }
-  static getEntryDataURL(inputEl, ref, callback) {
+  static getEntryDataURL(inputEl, ref) {
     const file = this.activeFiles(inputEl).find(
       (file2) => this.genFileRef(file2) === ref
     );
-    callback(URL.createObjectURL(file));
+    if (!file)
+      return null;
+    return URL.createObjectURL(file);
   }
   static hasUploadsInProgress(formEl) {
     let active = 0;
@@ -1264,10 +1266,8 @@ var Hooks = {
       this.inputEl = document.getElementById(
         this.el.getAttribute(PHX_UPLOAD_REF)
       );
-      LiveUploader.getEntryDataURL(this.inputEl, this.ref, (url) => {
-        this.url = url;
-        this.el.src = url;
-      });
+      this.url = LiveUploader.getEntryDataURL(this.inputEl, this.ref);
+      this.el.src = this.url;
     },
     destroyed() {
       URL.revokeObjectURL(this.url);
@@ -2243,7 +2243,7 @@ var DOMPatch = class {
       afterphxChildAdded: [],
       aftertransitionsDiscarded: []
     };
-    this.withChildren = opts.withChildren || opts.undoRef || false;
+    this.withChildren = opts.withChildren || opts.undoRef !== void 0 || false;
     this.undoRef = opts.undoRef;
   }
   before(kind, callback) {
@@ -2282,6 +2282,8 @@ var DOMPatch = class {
           targetContainer = clonedTree.querySelector(
             `[data-phx-component="${this.targetCID}"]`
           );
+          if (!targetContainer)
+            return;
         }
       }
     }
@@ -2309,6 +2311,9 @@ var DOMPatch = class {
           }
           if (isJoinPatch) {
             return node.id;
+          }
+          if (dom_default.private(node, "clientsideIdAttribute")) {
+            return node.getAttribute && node.getAttribute(PHX_MAGIC_ID);
           }
           return node.id || node.getAttribute && node.getAttribute(PHX_MAGIC_ID);
         },
@@ -2431,7 +2436,11 @@ var DOMPatch = class {
             phxViewportBottom
           );
           dom_default.cleanChildNodes(toEl, phxUpdate);
+          const isFocusedFormEl = focused && fromEl.isSameNode(focused) && dom_default.isFormInput(fromEl);
+          const focusedSelectChanged = isFocusedFormEl && this.isChangedSelect(fromEl, toEl);
           if (this.skipCIDSibling(toEl)) {
+            this.maybeCloneLockedElement(fromEl, isFocusedFormEl);
+            this.copyNestedPrivateLock(fromEl, toEl);
             this.maybeReOrderStream(fromEl);
             return false;
           }
@@ -2459,22 +2468,7 @@ var DOMPatch = class {
           if (fromEl.type === "number" && fromEl.validity && fromEl.validity.badInput) {
             return false;
           }
-          const isFocusedFormEl = focused && fromEl.isSameNode(focused) && dom_default.isFormInput(fromEl);
-          const focusedSelectChanged = isFocusedFormEl && this.isChangedSelect(fromEl, toEl);
-          if (fromEl.hasAttribute(PHX_REF_SRC)) {
-            const ref = new ElementRef(fromEl);
-            if (ref.lockRef && (!this.undoRef || !ref.isLockUndoneBy(this.undoRef))) {
-              dom_default.applyStickyOperations(fromEl);
-              const isLocked = fromEl.hasAttribute(PHX_REF_LOCK);
-              const clone2 = isLocked ? dom_default.private(fromEl, PHX_REF_LOCK) || fromEl.cloneNode(true) : null;
-              if (clone2) {
-                dom_default.putPrivate(fromEl, PHX_REF_LOCK, clone2);
-                if (!isFocusedFormEl) {
-                  fromEl = clone2;
-                }
-              }
-            }
-          }
+          fromEl = this.maybeCloneLockedElement(fromEl, isFocusedFormEl);
           if (dom_default.isPhxChild(toEl)) {
             const prevSession = fromEl.getAttribute(PHX_SESSION);
             dom_default.mergeAttrs(fromEl, toEl, { exclude: [PHX_STATIC] });
@@ -2485,13 +2479,7 @@ var DOMPatch = class {
             dom_default.applyStickyOperations(fromEl);
             return false;
           }
-          if (this.undoRef && dom_default.private(toEl, PHX_REF_LOCK)) {
-            dom_default.putPrivate(
-              fromEl,
-              PHX_REF_LOCK,
-              dom_default.private(toEl, PHX_REF_LOCK)
-            );
-          }
+          this.copyNestedPrivateLock(fromEl, toEl);
           dom_default.copyPrivates(toEl, fromEl);
           if (dom_default.isPortalTemplate(toEl)) {
             portalCallbacks.push(() => this.teleport(toEl, morph));
@@ -2729,6 +2717,25 @@ var DOMPatch = class {
   }
   skipCIDSibling(el) {
     return el.nodeType === Node.ELEMENT_NODE && el.hasAttribute(PHX_SKIP);
+  }
+  maybeCloneLockedElement(fromEl, isFocusedFormEl) {
+    if (!fromEl.hasAttribute(PHX_REF_SRC))
+      return fromEl;
+    const ref = new ElementRef(fromEl);
+    if (ref.lockRef === null || this.undoRef !== void 0 && ref.isLockUndoneBy(this.undoRef)) {
+      return fromEl;
+    }
+    dom_default.applyStickyOperations(fromEl);
+    const clone2 = fromEl.hasAttribute(PHX_REF_LOCK) ? dom_default.private(fromEl, PHX_REF_LOCK) || fromEl.cloneNode(true) : null;
+    if (!clone2)
+      return fromEl;
+    dom_default.putPrivate(fromEl, PHX_REF_LOCK, clone2);
+    return isFocusedFormEl ? fromEl : clone2;
+  }
+  copyNestedPrivateLock(fromEl, toEl) {
+    if (this.undoRef === void 0 || !dom_default.private(toEl, PHX_REF_LOCK))
+      return;
+    dom_default.putPrivate(fromEl, PHX_REF_LOCK, dom_default.private(toEl, PHX_REF_LOCK));
   }
   targetCIDContainer(html) {
     if (!this.isCIDPatch()) {
@@ -3667,6 +3674,9 @@ var JS = {
     const alteredAttrs = sets.map(([attr, _val]) => attr).concat(removes);
     const newSets = prevSets.filter(([attr, _val]) => !alteredAttrs.includes(attr)).concat(sets);
     const newRemoves = prevRemoves.filter((attr) => !alteredAttrs.includes(attr)).concat(removes);
+    if (sets.some(([attr, _val]) => attr === "id")) {
+      dom_default.putPrivate(el, "clientsideIdAttribute", true);
+    }
     dom_default.putSticky(el, "attrs", (currentEl) => {
       newRemoves.forEach((attr) => currentEl.removeAttribute(attr));
       newSets.forEach(([attr, val]) => currentEl.setAttribute(attr, val));
@@ -6975,10 +6985,14 @@ function createHook(el, callbacks) {
   dom_default.putCustomElHook(el, hook);
   return hook;
 }
+function getFileURLForUpload(input, uploadRef) {
+  return LiveUploader.getEntryDataURL(input, uploadRef);
+}
 export {
   LiveSocket2 as LiveSocket,
   ViewHook,
   createHook,
+  getFileURLForUpload,
   isUsedInput
 };
 //# sourceMappingURL=phoenix_live_view.esm.js.map
