@@ -1479,7 +1479,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       }
     },
     updated() {
-      if (!this.scrollContainer.isConnected) {
+      if (this.scrollContainer && !this.scrollContainer.isConnected) {
         this.destroyed();
         this.mounted();
       }
@@ -6003,7 +6003,7 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
     }
     // public
     version() {
-      return "1.2.0-rc.1";
+      return "1.2.0-rc.2";
     }
     isProfileEnabled() {
       return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true";

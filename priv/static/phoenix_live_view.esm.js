@@ -1432,7 +1432,7 @@ Hooks.InfiniteScroll = {
     }
   },
   updated() {
-    if (!this.scrollContainer.isConnected) {
+    if (this.scrollContainer && !this.scrollContainer.isConnected) {
       this.destroyed();
       this.mounted();
     }
@@ -5958,7 +5958,7 @@ var LiveSocket = class {
   }
   // public
   version() {
-    return "1.2.0-rc.1";
+    return "1.2.0-rc.2";
   }
   isProfileEnabled() {
     return this.sessionStorage.getItem(PHX_LV_PROFILE) === "true";
