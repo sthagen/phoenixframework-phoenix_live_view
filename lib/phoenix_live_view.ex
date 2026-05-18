@@ -1050,7 +1050,7 @@ defmodule Phoenix.LiveView do
   all state will be discarded.
 
   Calling redirect shuts down the LiveView channel. If you need
-  to programatically open an external link without causing the
+  to programmatically open an external link without causing the
   LiveView to shut down, for example because of `mailto:` or `tel:`
   URL schemes, consider using `push_event/3` with a custom client-side
   handler instead.
@@ -1229,7 +1229,7 @@ defmodule Phoenix.LiveView do
   })
   ```
 
-  By computing the parameters with a function, reconnections will reevalute
+  By computing the parameters with a function, reconnections will reevaluate
   the code, allowing you to fetch the latest data.
 
   On the LiveView, you will use `get_connect_params/1` to read the data,
@@ -2245,8 +2245,8 @@ defmodule Phoenix.LiveView do
   an `Phoenix.LiveView.AsyncResult` struct holding the status of the operation
   and the result when the function completes.
 
-  The function must return either a map or a keyword list with the assigns
-  to merge into the socket.
+  The function must return either `{:ok, assigns}` or `{:error, reason}`,
+  where `assigns` is a map with the keys passed to `assign_async/3`.
 
   The task is only started when the socket is connected.
 
