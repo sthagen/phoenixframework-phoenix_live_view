@@ -68,7 +68,7 @@ defmodule Phoenix.LiveView.Router do
       using a LiveView without actions or defaults to the LiveView name when using
       actions.
 
-    * `:metadata` - a map to optional feed metadata used on telemetry events and route info,
+    * `:metadata` - a map of optional metadata to feed telemetry events and route info,
       for example: `%{route_name: :foo, access: :user}`. This data can be retrieved by
       calling `Phoenix.Router.route_info/4` with the `uri` from the `handle_params`
       callback. This can be used to customize a LiveView which may be invoked from
@@ -292,7 +292,7 @@ defmodule Phoenix.LiveView.Router do
         raise ArgumentError, """
         invalid live_session :layout
 
-        expected a tuple with the view module and template string or atom name, got #{inspect(bad_layout)}
+        expected a tuple with the view module and template atom name, got #{inspect(bad_layout)}
         """
 
       {:on_mount, on_mount}, acc ->

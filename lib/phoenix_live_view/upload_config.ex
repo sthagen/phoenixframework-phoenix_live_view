@@ -180,7 +180,7 @@ defmodule Phoenix.LiveView.UploadConfig do
           raise ArgumentError, """
           invalid :external value provided to allow_upload.
 
-          Only an anonymous function receiving the socket as an argument is supported. Got:
+          Only a 2-arity function receiving the upload entry and socket is supported. Got:
 
           #{inspect(other)}
           """
@@ -481,7 +481,7 @@ defmodule Phoenix.LiveView.UploadConfig do
     new_entries =
       Enum.map(conf.entries, fn
         %UploadEntry{ref: ^entry_ref} = entry -> func.(entry)
-        %UploadEntry{ref: _ef} = entry -> entry
+        %UploadEntry{ref: _ref} = entry -> entry
       end)
 
     recalculate_computed_fields(%{conf | entries: new_entries})

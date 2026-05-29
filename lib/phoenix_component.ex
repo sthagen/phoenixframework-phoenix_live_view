@@ -2009,7 +2009,7 @@ defmodule Phoenix.Component do
   end
 
   @doc ~S'''
-  Declares attributes for a HEEx function components.
+  Declares attributes for a HEEx function component.
 
   ## Arguments
 
@@ -3094,6 +3094,8 @@ defmodule Phoenix.Component do
   )
 
   def link(%{navigate: to} = assigns) when is_binary(to) do
+    Phoenix.LiveView.Utils.valid_live_navigation_destination!(to, "<.link navigate>")
+
     ~H"""
     <a
       href={@navigate}
@@ -3106,6 +3108,8 @@ defmodule Phoenix.Component do
   end
 
   def link(%{patch: to} = assigns) when is_binary(to) do
+    Phoenix.LiveView.Utils.valid_live_navigation_destination!(to, "<.link patch>")
+
     ~H"""
     <a
       href={@patch}
