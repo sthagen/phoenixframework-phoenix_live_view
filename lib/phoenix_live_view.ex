@@ -119,7 +119,7 @@ defmodule Phoenix.LiveView do
   > assign_async(:org, fn -> {:ok, %{org: fetch_org(slug)}} end)
   > ```
   >
-  > See: https://hexdocs.pm/elixir/process-anti-patterns.html#sending-unnecessary-data
+  > See: https://elixir.hexdocs.pm/process-anti-patterns.html#sending-unnecessary-data
 
   The state of the async operation is stored as a `Phoenix.LiveView.AsyncResult`
   in the socket assigns. It carries the loading and failed states, as
@@ -321,7 +321,7 @@ defmodule Phoenix.LiveView do
   `{:reply, map(), socket}`, where the given `map()` is encoded
   and sent as a reply to the client.
   """
-  @callback handle_event(event :: binary, unsigned_params(), socket :: Socket.t()) ::
+  @callback handle_event(event :: binary, term(), socket :: Socket.t()) ::
               {:noreply, Socket.t()} | {:reply, map, Socket.t()}
 
   @doc """
@@ -1379,7 +1379,7 @@ defmodule Phoenix.LiveView do
   </div>
   ```
 
-  For larger projects, you can extract this into [a hook](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#on_mount/1):
+  For larger projects, you can extract this into [a hook](https://phoenix-live-view.hexdocs.pm/Phoenix.LiveView.html#on_mount/1):
 
       # MyAppWeb.CheckStaticChanged
       def on_mount(:default, _params, _session, socket) do
@@ -1774,7 +1774,7 @@ defmodule Phoenix.LiveView do
 
   ## Examples
 
-      def handle_event(_, socket) do
+      def handle_event(_, _, socket) do
         {:noreply, detach_hook(socket, :hook_that_was_attached, :handle_event)}
       end
   """

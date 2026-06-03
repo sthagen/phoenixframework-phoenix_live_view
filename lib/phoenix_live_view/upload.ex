@@ -19,7 +19,8 @@ defmodule Phoenix.LiveView.Upload do
         raise ArgumentError, """
         cannot allow_upload on an existing upload with active entries.
 
-        Use cancel_upload and/or consume_upload to handle the active entries before allowing a new upload.
+        Consume or cancel the existing entries before allowing a new upload.
+        See cancel_upload, consume_uploaded_entry, or consume_uploaded_entries.
         """
     end
 
@@ -86,7 +87,7 @@ defmodule Phoenix.LiveView.Upload do
   @doc """
   Cancels all uploads that exist.
 
-  Returns the new socket with the cancelled upload configs.
+  Returns a tuple containing the new socket and a list of the cancelled upload configs.
   """
   def maybe_cancel_uploads(socket) do
     uploads = socket.assigns[:uploads] || %{}

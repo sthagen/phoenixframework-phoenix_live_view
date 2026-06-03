@@ -275,7 +275,7 @@ defmodule Phoenix.LiveView.Diff do
   @doc """
   Sends an update to a component.
 
-  Like `write_component/5`, it will store the result under the `cid`
+  Like `write_component/4`, it will store the result under the `cid`
   key in the `component_diffs` map.
 
   If the component exists, a `{diff, new_components}` tuple
@@ -1147,19 +1147,17 @@ defmodule Phoenix.LiveView.Diff do
     end
   end
 
-  defp mount_component(socket, component, assigns) do
-    private =
-      socket.private
-      |> Map.take([:conn_session, :root_view])
-      |> Map.put(:live_temp, %{})
-      |> Map.put(:children_cids, [])
-      |> Map.put(:lifecycle, %Phoenix.LiveView.Lifecycle{})
-
-    socket =
-      configure_socket_for_component(socket, assigns, private)
-      |> Utils.assign(:flash, %{})
-
-    Utils.maybe_call_live_component_mount!(socket, component)
+  defp mount_component(%{private: parent_private} = socket, component, assigns) do
+    socket
+    |> configure_socket_for_component(assigns, %{
+      conn_session: parent_private[:conn_session],
+      root_view: parent_private[:root_view],
+      live_temp: %{},
+      children_cids: [],
+      lifecycle: %Phoenix.LiveView.Lifecycle{}
+    })
+    |> Utils.assign(:flash, %{})
+    |> Utils.maybe_call_live_component_mount!(component)
   end
 
   defp configure_socket_for_component(socket, assigns, private) do
