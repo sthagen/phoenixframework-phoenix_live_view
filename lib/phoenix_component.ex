@@ -994,7 +994,7 @@ defmodule Phoenix.Component do
   * When rendering a LiveView inside a regular (non-live) controller/view.
 
   Most other cases for shared functionality, including state management and user interactions, can be
-  [achieved with function components or LiveComponents](welcome.html#compartmentalize-state-markup-and-events-in-liveview)
+  [achieved with function components or LiveComponents](welcome.md#compartmentalize-state-markup-and-events-in-liveview)
 
   ## Options
 
@@ -1909,7 +1909,7 @@ defmodule Phoenix.Component do
   A named slot may declare attributes by passing a block with calls to `attr/3`.
 
   Unlike attributes, slot attributes cannot accept the `:default` option. Passing one
-  will result in a compile warning being issued.
+  will result in a compilation error.
 
   ### The Default Slot
 

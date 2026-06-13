@@ -199,7 +199,7 @@ defmodule Phoenix.LiveViewTest do
 
           - `:duplicate_id` - when LiveViewTest detects a duplicate DOM ID
           - `:duplicate_live_component` - when LiveViewTest detects a LiveComponent being rendered multiple times with the same ID
-          - `:missing_form_id` - when LiveViewTest detects a form without an ID attribute (this prevents [form recovery](form-bindings.html#recovery-following-crashes-or-disconnects))
+          - `:missing_form_id` - when LiveViewTest detects a form without an ID attribute (this prevents [form recovery](form-bindings.md#recovery-following-crashes-or-disconnects))
 
         The supported values are:
 
@@ -1876,7 +1876,15 @@ defmodule Phoenix.LiveViewTest do
             "expected LiveView to redirect to #{inspect(expected_to)}, but got #{inspect(to)}"
     end
 
-    conn = Phoenix.ConnTest.ensure_recycled(conn)
+    conn =
+      case conn.private[:live_view_connect_params] do
+        nil ->
+          Phoenix.ConnTest.ensure_recycled(conn)
+
+        params ->
+          recycled_conn = Phoenix.ConnTest.ensure_recycled(conn)
+          Plug.Conn.put_private(recycled_conn, :live_view_connect_params, params)
+      end
 
     if flash = opts[:flash] do
       {Phoenix.ConnTest.put_req_cookie(conn, @flash_cookie, ensure_signed_flash(endpoint, flash)),
