@@ -1,6 +1,6 @@
 {
   "name": "phoenix_live_view",
-  "version": "1.2.1",
+  "version": "1.2.3",
   "description": "The Phoenix LiveView JavaScript client.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@babel/cli": "7.27.2",
-    "@babel/core": "7.27.4",
+    "@babel/core": "7.29.6",
     "@babel/preset-env": "7.27.2",
     "@babel/preset-typescript": "^7.27.1",
     "@eslint/js": "^9.29.0",
@@ -58,7 +58,6 @@
     "typescript-eslint": "^8.34.0"
   },
   "scripts": {
-    "setup": "mix deps.get && npm install",
     "build": "tsc",
     "e2e:server": "MIX_ENV=e2e mix test --cover --export-coverage e2e test/e2e/test_helper.exs",
     "e2e:test": "mix assets.build && cd test/e2e && npx playwright install && npx playwright test",
@@ -71,7 +70,7 @@
     "test": "npm run js:test && npm run e2e:test",
     "typecheck:tests": "tsc -p assets/test/tsconfig.json",
     "cover:merge": "node test/e2e/merge-coverage.js",
-    "cover": "npm run test && npm run cover:merge",
+    "cover": "npm test && npm run cover:merge",
     "cover:report": "npx monocart show-report cover/merged-js/index.html",
     "docs": "typedoc assets/js/phoenix_live_view/index.ts --readme assets/js/phoenix_live_view/README.md --html doc/js"
   }
