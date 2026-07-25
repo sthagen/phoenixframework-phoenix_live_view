@@ -115,8 +115,12 @@ export const ROOT = "r";
 export const COMPONENTS = "c";
 export const KEYED = "k";
 export const KEYED_COUNT = "kc";
+export const KEYED_MOVED = "km";
 export const EVENTS = "e";
 export const REPLY = "r";
 export const TITLE = "t";
 export const TEMPLATES = "p";
 export const STREAM = "stream";
+// Diagnostics
+export const PHX_LV_DIAGNOSTIC_EVENT = "phx:live-view:diagnostic";
+export const PHX_LV_DIAGNOSTIC_VERSION = 1;
