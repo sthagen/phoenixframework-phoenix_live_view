@@ -52,16 +52,12 @@ defmodule Phoenix.LiveView.Upload do
           |> Map.fetch!(name)
           |> UploadConfig.disallow()
 
-        new_refs =
-          Enum.reduce(uploads[@refs_to_names], uploads[@refs_to_names], fn
-            {ref, ^name}, acc -> Map.delete(acc, ref)
-            {_ref, _name}, acc -> acc
-          end)
-
         new_uploads =
           uploads
           |> Map.put(name, upload_config)
-          |> Map.update!(@refs_to_names, fn _ -> new_refs end)
+          |> Map.update!(@refs_to_names, fn refs ->
+            Map.reject(refs, fn {_ref, val} -> val == name end)
+          end)
 
         Utils.assign(socket, :uploads, new_uploads)
 
@@ -190,6 +186,24 @@ defmodule Phoenix.LiveView.Upload do
     conf
     |> UploadConfig.put_error(entry_ref, reason)
     |> update_uploads(socket)
+  end
+
+  @doc """
+  Retrieves the `%UploadConfig{}` from the socket for the provided ref.
+
+  Returns `:error` when the socket has no upload allowed for the ref.
+  """
+  def fetch_upload_by_ref(%Socket{} = socket, config_ref) do
+    case socket.assigns[:uploads] do
+      nil ->
+        :error
+
+      uploads ->
+        case Map.fetch(Map.fetch!(uploads, @refs_to_names), config_ref) do
+          {:ok, name} -> {:ok, Map.fetch!(uploads, name)}
+          :error -> :error
+        end
+    end
   end
 
   @doc """

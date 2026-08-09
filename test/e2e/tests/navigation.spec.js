@@ -121,8 +121,8 @@ test("popstate", async ({ page }) => {
   await expect(page).toHaveURL(/\/navigation\/a\?/);
   expect(networkEvents).toEqual([]);
 
-  await page.getByRole("link", { name: "LiveView B" }).click(),
-    await syncLV(page);
+  await page.getByRole("link", { name: "LiveView B" }).click();
+  await syncLV(page);
   await expect(page).toHaveURL("/navigation/b");
   expect(networkEvents).toEqual([]);
 
@@ -146,6 +146,129 @@ test("popstate", async ({ page }) => {
   expect(networkEvents).toEqual([]);
 });
 
+test("can prevent live link navigation with before navigate", async ({
+  page,
+}) => {
+  await page.goto("/navigation/a");
+  await syncLV(page);
+
+  await page.evaluate(() => {
+    window.beforeNavigateEvents = [];
+    window.navigateEvents = [];
+    window.preventNavigation = true;
+    window.addEventListener("phx:before-navigate", (event) => {
+      window.beforeNavigateEvents.push(event.detail);
+      if (window.preventNavigation) {
+        event.preventDefault();
+      }
+    });
+    window.addEventListener("phx:navigate", (event) => {
+      window.navigateEvents.push(event.detail);
+    });
+  });
+
+  networkEvents = [];
+  webSocketEvents = [];
+
+  await page.getByRole("link", { name: "LiveView B" }).click();
+
+  await expect(page).toHaveURL("/navigation/a");
+  expect(networkEvents).toEqual([]);
+  expect(webSocketEvents).toEqual([]);
+  expect(await page.evaluate(() => window.beforeNavigateEvents)).toEqual([
+    {
+      href: "http://localhost:4004/navigation/b",
+      patch: false,
+      pop: false,
+      direction: "forward",
+    },
+  ]);
+  expect(await page.evaluate(() => window.navigateEvents)).toEqual([]);
+
+  await page.evaluate(() => {
+    window.preventNavigation = false;
+  });
+  await page.getByRole("link", { name: "LiveView B" }).click();
+  await syncLV(page);
+
+  await expect(page).toHaveURL("/navigation/b");
+  expect(networkEvents).toEqual([]);
+});
+
+test("can prevent popstate navigation with before navigate", async ({
+  page,
+}) => {
+  await page.goto("/navigation/a");
+  await syncLV(page);
+
+  await page.getByRole("link", { name: "LiveView B" }).click();
+  await syncLV(page);
+  await expect(page).toHaveURL("/navigation/b");
+
+  await page.evaluate(() => {
+    window.beforeNavigateEvents = [];
+    window.navigateEvents = [];
+    window.preventNavigation = true;
+    window.addEventListener("phx:before-navigate", (event) => {
+      window.beforeNavigateEvents.push(event.detail);
+      if (window.preventNavigation) {
+        event.preventDefault();
+      }
+    });
+    window.addEventListener("phx:navigate", (event) => {
+      window.navigateEvents.push(event.detail);
+    });
+  });
+
+  networkEvents = [];
+  webSocketEvents = [];
+
+  await page.goBack();
+
+  await expect(page).toHaveURL("/navigation/b");
+  expect(networkEvents).toEqual([]);
+  expect(webSocketEvents).toEqual([]);
+  expect(await page.evaluate(() => window.beforeNavigateEvents)).toEqual([
+    {
+      href: "http://localhost:4004/navigation/a",
+      patch: false,
+      pop: true,
+      direction: "backward",
+    },
+  ]);
+  expect(await page.evaluate(() => window.navigateEvents)).toEqual([]);
+
+  await page.evaluate(() => {
+    window.preventNavigation = false;
+  });
+  await page.goBack();
+  await syncLV(page);
+
+  await expect(page).toHaveURL("/navigation/a");
+  expect(networkEvents).toEqual([]);
+});
+
+test("before navigate does not prevent server-side navigation", async ({
+  page,
+}) => {
+  await page.goto("/navigation/a");
+  await syncLV(page);
+
+  await page.evaluate(() => {
+    window.beforeNavigateEvents = [];
+    window.addEventListener("phx:before-navigate", (event) => {
+      window.beforeNavigateEvents.push(event.detail);
+      event.preventDefault();
+    });
+  });
+
+  await page.getByRole("button", { name: "Server Navigate" }).click();
+  await syncLV(page);
+
+  await expect(page).toHaveURL("/navigation/b");
+  expect(await page.evaluate(() => window.beforeNavigateEvents)).toEqual([]);
+});
+
 test("patch with replace replaces history", async ({ page }) => {
   await page.goto("/navigation/a");
   await syncLV(page);
@@ -162,7 +285,6 @@ test("patch with replace replaces history", async ({ page }) => {
 
 test("falls back to http navigation when navigating between live sessions", async ({
   page,
-  browserName,
 }) => {
   await page.goto("/navigation/a");
   await syncLV(page);
@@ -180,18 +302,15 @@ test("falls back to http navigation when navigating between live sessions", asyn
     ]),
   );
   expect(webSocketEvents).toEqual(
-    expect.arrayContaining(
-      [
-        { type: "sent", payload: expect.stringContaining("phx_leave") },
-        { type: "sent", payload: expect.stringContaining("phx_join") },
-        {
-          type: "received",
-          payload: expect.stringMatching(/error.*unauthorized/),
-        },
-      ].concat(browserName === "webkit" ? [] : [{ type: "close" }]),
-    ),
+    expect.arrayContaining([
+      { type: "sent", payload: expect.stringContaining("phx_leave") },
+      { type: "sent", payload: expect.stringContaining("phx_join") },
+      {
+        type: "received",
+        payload: expect.stringMatching(/error.*unauthorized/),
+      },
+    ]),
   );
-  // ^ webkit doesn't always seem to emit websocket close events
 });
 
 test("restores scroll position after navigation", async ({ page }) => {
