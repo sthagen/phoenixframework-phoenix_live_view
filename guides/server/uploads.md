@@ -70,6 +70,11 @@ be set automatically based on the [`allow_upload/3`] spec.
 Reactive updates to the template will occur as the end-user
 interacts with the file input.
 
+By default, consumed entries free capacity under the `:max_entries` limit. Pass
+`max_entries_mode: :total` to count consumed entries for the lifetime of an
+upload configuration instead. Once all entries have been consumed or cancelled,
+call `allow_upload/3` again to start a new batch and reset a `:total` limit.
+
 ### Upload entries
 
 Uploads are populated in an `@uploads` assign in the socket.
@@ -99,7 +104,7 @@ Let's look at an annotated example:
     <%!-- a regular click event whose handler will invoke Phoenix.LiveView.cancel_upload/3 --%>
     <button type="button" phx-click="cancel-upload" phx-value-ref={entry.ref} aria-label="cancel">&times;</button>
 
-    <%!-- Phoenix.Component.upload_errors/2 returns a list of error atoms --%>
+    <%!-- Phoenix.Component.upload_errors/2 returns a list of errors --%>
     <p :for={err <- upload_errors(@uploads.avatar, entry)} class="alert alert-danger">{error_to_string(err)}</p>
   </article>
 

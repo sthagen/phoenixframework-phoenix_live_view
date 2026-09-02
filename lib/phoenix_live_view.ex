@@ -226,7 +226,7 @@ defmodule Phoenix.LiveView do
 
   '''
 
-  alias Phoenix.LiveView.{Socket, LiveStream, Async}
+  alias Phoenix.LiveView.{Socket, LiveStream, Async, Route}
 
   @type unsigned_params :: map
 
@@ -883,8 +883,14 @@ defmodule Phoenix.LiveView do
       `:any` instead of a list to support to allow any kind of file.
       For example, `[".jpeg"]`, `:any`, etc.
 
-    * `:max_entries` - The maximum number of selected files to allow per
-      file input. Defaults to 1.
+    * `:max_entries` - The maximum number of files to allow. Defaults to 1.
+
+    * `:max_entries_mode` - Controls how `:max_entries` is counted. `:selected`
+      limits the entries currently selected by the file input, so consuming an
+      entry frees capacity for another. `:total` also counts entries that have
+      already been consumed for the lifetime of the upload configuration. Once
+      all entries have been consumed or cancelled, call `allow_upload/3` again
+      to reset a `:total` limit. Defaults to `:selected`.
 
     * `:max_file_size` - The maximum file size in bytes to allow to be uploaded.
       Defaults 8MB. For example, `12_000_000`.
@@ -897,8 +903,11 @@ defmodule Phoenix.LiveView do
 
     * `:external` - A 2-arity function for generating metadata for external
       client uploaders. This function must return either `{:ok, meta, socket}`
-      or `{:error, meta, socket}` where meta is a map. See the Uploads section
-      for example usage.
+      or `{:error, error_meta, socket}`, where `meta` and `error_meta` are maps.
+      An error marks the entry as failed and exposes
+      `{:external_metadata_failure, error_meta}` via `Phoenix.Component.upload_errors/2`.
+      With auto uploads, any remaining valid entries continue uploading. See the
+      Uploads section for example usage.
 
     * `:progress` - An optional 3-arity function for receiving progress events.
 
@@ -1059,6 +1068,38 @@ defmodule Phoenix.LiveView do
       end
   """
   defdelegate consume_uploaded_entry(socket, entry, func), to: Phoenix.LiveView.Upload
+
+  @doc """
+  Returns the navigation type for the given local path.
+
+  The navigation type is:
+
+    * `:patch` when the path points to the current LiveView in the current
+      `live_session`
+    * `:navigate` when the path points to another LiveView in the current
+      `live_session`
+    * `:href` otherwise
+
+  During disconnected render this function always returns `:href`. Once
+  the LiveView connects, a full render resolves the live navigation type.
+
+  This function is useful for components which link to paths that may or may
+  not support live navigation:
+
+  ```heex
+  <.link {%{navigation_type(@socket, @to) => @to}}>
+    Open
+  </.link>
+  ```
+
+  Choosing `:patch` for the current LiveView avoids remounting it. Use an
+  explicit `navigate` attribute instead if the LiveView should be remounted.
+  """
+  @spec navigation_type(Socket.t(), String.t()) :: :patch | :navigate | :href
+  def navigation_type(%Socket{} = socket, path) when is_binary(path) do
+    path = validate_local_url!(path, "navigation_type/2")
+    Route.navigation_type(socket, path)
+  end
 
   @doc """
   Annotates the socket for redirect to a destination path.
@@ -1979,6 +2020,12 @@ defmodule Phoenix.LiveView do
 
        For example, when you render a non-stream item at the beginning of the stream container and then
        prepend items (with `at: 0`) to the stream, the non-stream item will be pushed down.
+
+  Also note that after patching the DOM, LiveView always orders stream items before non-stream items.
+  This means that in the `songs-empty` example above, the empty placeholder would be placed after stream
+  items in case the table is not empty. If you need to customize this, you can manually reorder elements
+  with a [JavaScript hook](js-interop.md#client-hooks-via-phx-hook).
+  See [this issue](https://github.com/phoenixframework/phoenix_live_view/issues/3744#issuecomment-2781485595) for an example.
 
   """
   @spec stream(

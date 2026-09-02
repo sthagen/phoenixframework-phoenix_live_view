@@ -57,12 +57,31 @@ defmodule Phoenix.LiveViewTest.E2E.Layout do
           this.pushEvent("ping", {}, () => (this.el.innerText += "pong"));
         },
       };
+      let Uploaders = {};
+      Uploaders.TestExternal = function (entries) {
+        entries.forEach((entry) => {
+          document.documentElement.dataset.externalUploadStarted = entry.ref;
+
+          let upload = {
+            abort() {
+              document.documentElement.dataset.externalUploadAborted = entry.ref;
+            },
+          };
+
+          entry.onCancel(() => upload.abort());
+        });
+      };
       let csrfToken = document
         .querySelector("meta[name='csrf-token']")
         .getAttribute("content");
       let liveSocket = new LiveSocket("/live", window.Phoenix.Socket, {
         params: { _csrf_token: csrfToken },
         hooks: { ...Hooks, ...window.hooks, ...colocatedHooks },
+        uploaders: Uploaders,
+        cascadePhxRemoveOnNavigation:
+          new URLSearchParams(window.location.search).get(
+            "cascadePhxRemoveOnNavigation",
+          ) !== "false",
       });
       liveSocket.connect();
       window.liveSocket = liveSocket;
@@ -175,16 +194,25 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
       pipe_through(:browser)
 
       live "/2787", Issue2787Live
+      live "/2835", Issue2835Live
       live "/3026", Issue3026Live
       live "/3040", Issue3040Live
       live "/3083", Issue3083Live
       live "/3107", Issue3107Live
       live "/3117", Issue3117Live
+
+      live "/3199", Issue3199Live,
+        container: {:div, [{:"phx-remove", Phoenix.LiveViewTest.E2E.Issue3199Live.remove_view()}]}
+
+      live "/3199/away", Issue3199Live.Away
       live "/3200/messages", Issue3200.PanelLive, :messages_tab
       live "/3200/settings", Issue3200.PanelLive, :settings_tab
       live "/3194", Issue3194Live
       live "/3194/other", Issue3194Live.OtherLive
+      live "/3319", Issue3319Live
+      live "/3368", Issue3368Live
       live "/3378", Issue3378.HomeLive
+      live "/3391", Issue3391Live
       live "/3448", Issue3448Live
       live "/3496/a", Issue3496.ALive
       live "/3496/b", Issue3496.BLive
@@ -225,6 +253,7 @@ defmodule Phoenix.LiveViewTest.E2E.Router do
       live "/4334", Issue4334Live
       live "/4350", Issue4350Live
       live "/4359", Issue4359Live
+      live "/4368", Issue4368Live
     end
   end
 

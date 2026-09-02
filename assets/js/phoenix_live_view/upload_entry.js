@@ -10,9 +10,10 @@ import LiveUploader from "./live_uploader";
 
 export default class UploadEntry {
   static isActive(fileEl, file) {
-    const isNew = file._phxRef === undefined;
+    const ref = file._phxRef;
+    const isNew = ref === undefined;
     const activeRefs = fileEl.getAttribute(PHX_ACTIVE_ENTRY_REFS).split(",");
-    const isActive = activeRefs.indexOf(LiveUploader.genFileRef(file)) >= 0;
+    const isActive = !isNew && activeRefs.indexOf(ref) >= 0;
     return file.size > 0 && (isNew || isActive);
   }
 
@@ -43,6 +44,7 @@ export default class UploadEntry {
     this._isDone = false;
     this._progress = 0;
     this._lastProgressSent = -1;
+    this._onCancel = function () {};
     this._onDone = function () {};
     this._onElUpdated = this.onElUpdated.bind(this);
     this.fileEl.addEventListener(PHX_LIVE_FILE_UPDATED, this._onElUpdated);
@@ -79,7 +81,11 @@ export default class UploadEntry {
     this.file._preflightInProgress = false;
     this._isCancelled = true;
     this._isDone = true;
-    this._onDone();
+    try {
+      this._onCancel();
+    } finally {
+      this._onDone();
+    }
   }
 
   isDone() {
@@ -96,6 +102,14 @@ export default class UploadEntry {
 
   isAutoUpload() {
     return this.autoUpload;
+  }
+
+  onCancel(callback) {
+    if (this.isCancelled()) {
+      callback();
+    } else {
+      this._onCancel = callback;
+    }
   }
 
   //private

@@ -74,9 +74,13 @@ defmodule Phoenix.LiveView.Upload do
 
     case UploadConfig.get_entry_by_ref(upload_config, entry_ref) do
       %UploadEntry{} = entry ->
-        upload_config
-        |> UploadConfig.cancel_entry(entry)
-        |> update_uploads(socket)
+        new_upload_config = UploadConfig.cancel_entry(upload_config, entry)
+
+        if new_upload_config.entries == [] do
+          Phoenix.LiveView.Channel.drop_upload_name(new_upload_config)
+        end
+
+        update_uploads(new_upload_config, socket)
 
       _ ->
         raise ArgumentError, "no entry in upload \"#{inspect(name)}\" with ref \"#{entry_ref}\""
@@ -159,6 +163,26 @@ defmodule Phoenix.LiveView.Upload do
   def unregister_completed_entry_upload(%Socket{} = socket, %UploadConfig{} = conf, entry_ref) do
     conf
     |> UploadConfig.unregister_completed_entry(entry_ref)
+    |> update_uploads(socket)
+  end
+
+  @doc false
+  def consume_entry_upload(%Socket{} = socket, %UploadConfig{} = conf, entry_ref) do
+    case UploadConfig.get_entry_by_ref(conf, entry_ref) do
+      %UploadEntry{} = entry ->
+        conf
+        |> UploadConfig.consume_entry(entry)
+        |> update_uploads(socket)
+
+      nil ->
+        socket
+    end
+  end
+
+  @doc false
+  def fail_entry_upload(%Socket{} = socket, %UploadConfig{} = conf, entry_ref, reason) do
+    conf
+    |> UploadConfig.fail_entry(entry_ref, reason)
     |> update_uploads(socket)
   end
 
@@ -287,10 +311,10 @@ defmodule Phoenix.LiveView.Upload do
   @doc """
   Drops all entries from the upload.
   """
-  def drop_upload_entries(%Socket{} = socket, %UploadConfig{} = conf, entry_refs) do
+  def drop_consumed_upload_entries(%Socket{} = socket, %UploadConfig{} = conf, entry_refs) do
     conf.entries
     |> Enum.filter(fn entry -> entry.ref in entry_refs end)
-    |> Enum.reduce(conf, fn entry, acc -> UploadConfig.drop_entry(acc, entry) end)
+    |> Enum.reduce(conf, fn entry, acc -> UploadConfig.consume_entry(acc, entry) end)
     |> update_uploads(socket)
   end
 
@@ -302,9 +326,8 @@ defmodule Phoenix.LiveView.Upload do
   defp consume_entries(%UploadConfig{} = conf, entries, func)
        when is_list(entries) and is_function(func) do
     if conf.external do
-      results =
-        entries
-        |> Enum.map(fn entry ->
+      {results, consumed_refs} =
+        Enum.map_reduce(entries, [], fn entry, consumed_refs ->
           meta = Map.fetch!(conf.entry_refs_to_metas, entry.ref)
 
           result =
@@ -315,10 +338,10 @@ defmodule Phoenix.LiveView.Upload do
 
           case result do
             {:ok, return} ->
-              {entry.ref, return}
+              {return, [entry.ref | consumed_refs]}
 
             {:postpone, return} ->
-              {:postpone, return}
+              {return, consumed_refs}
 
             return ->
               IO.warn("""
@@ -331,19 +354,12 @@ defmodule Phoenix.LiveView.Upload do
                   #{inspect(return)}
               """)
 
-              {entry.ref, return}
+              {return, [entry.ref | consumed_refs]}
           end
         end)
 
-      consumed_refs =
-        Enum.flat_map(results, fn
-          {:postpone, _result} -> []
-          {ref, _result} -> [ref]
-        end)
-
-      Phoenix.LiveView.Channel.drop_upload_entries(conf, consumed_refs)
-
-      Enum.map(results, fn {_ref, result} -> result end)
+      Phoenix.LiveView.Channel.drop_consumed_upload_entries(conf, consumed_refs)
+      results
     else
       for entry <- entries,
           pid = UploadConfig.entry_pid(conf, entry),
@@ -359,11 +375,17 @@ defmodule Phoenix.LiveView.Upload do
   def generate_preflight_response(%Socket{} = socket, name, cid, refs) do
     %UploadConfig{} = conf = Map.fetch!(socket.assigns.uploads, name)
 
-    # don't send more than max_entries preflight responses
+    # don't send more than the remaining max_entries preflight responses
+    remaining_entries =
+      case conf.max_entries_mode do
+        :selected -> conf.max_entries
+        :total -> max(conf.max_entries - conf.consumed_entries, 0)
+      end
+
     refs =
       for {entry, i} <- Enum.with_index(conf.entries),
           entry.ref in refs,
-          i < conf.max_entries && not entry.preflighted?,
+          i < remaining_entries && not entry.preflighted?,
           do: entry.ref
 
     client_meta = %{
@@ -440,12 +462,20 @@ defmodule Phoenix.LiveView.Upload do
               new_socket = update_upload_entry_meta(new_socket, conf.name, entry, meta)
               {:cont, {:ok, Map.put(metas, entry.ref, meta), errors, new_socket}}
 
-            {:error, %{} = meta, new_socket} ->
+            {:error, %{} = error_meta, new_socket} ->
               if conf.auto_upload? do
-                new_errors = Map.put(errors, entry.ref, [meta])
+                new_socket =
+                  put_upload_error(
+                    new_socket,
+                    conf.name,
+                    entry.ref,
+                    {:external_metadata_failure, error_meta}
+                  )
+
+                new_errors = Map.put(errors, entry.ref, [error_meta])
                 {:cont, {:ok, metas, new_errors, new_socket}}
               else
-                {:halt, {:error, {entry.ref, meta}, new_socket}}
+                {:halt, {:error, {entry.ref, error_meta}, new_socket}}
               end
           end
         end
@@ -456,9 +486,16 @@ defmodule Phoenix.LiveView.Upload do
         reply = %{ref: conf.ref, config: client_config_meta, entries: entry_metas, errors: errors}
         {:ok, reply, new_socket}
 
-      {:error, {entry_ref, meta_reason}, new_socket} ->
-        new_socket = put_upload_error(new_socket, conf.name, entry_ref, meta_reason)
-        {:error, %{ref: conf.ref, error: [[entry_ref, meta_reason]]}, new_socket}
+      {:error, {entry_ref, error_meta}, new_socket} ->
+        new_socket =
+          put_upload_error(
+            new_socket,
+            conf.name,
+            entry_ref,
+            {:external_metadata_failure, error_meta}
+          )
+
+        {:error, %{ref: conf.ref, error: [[entry_ref, error_meta]]}, new_socket}
     end
   end
 

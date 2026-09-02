@@ -198,18 +198,36 @@ const JS = {
   },
 
   exec_push_focus(e, eventType, phxEvent, view, sourceEl, el) {
-    focusStack.push(el || sourceEl);
+    if (view.isDestroyed()) {
+      return;
+    }
+    focusStack.push({ el: el || sourceEl, view });
   },
 
-  exec_pop_focus(_e, _eventType, _phxEvent, _view, _sourceEl, _el) {
-    const el = focusStack.pop();
-    if (el) {
+  exec_pop_focus(_e, _eventType, _phxEvent, view, _sourceEl, _el) {
+    if (view.isDestroyed()) {
+      return;
+    }
+    const focusEntry = focusStack.pop();
+    if (focusEntry) {
+      const { el } = focusEntry;
       el.focus();
       // if you wonder about the nested animation frames, see exec_focus
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => el.focus());
       });
     }
+  },
+
+  dropFocus(view) {
+    let dropped = 0;
+    for (let i = focusStack.length - 1; i >= 0; i--) {
+      if (focusStack[i].view === view) {
+        focusStack.splice(i, 1);
+        dropped++;
+      }
+    }
+    return dropped;
   },
 
   exec_add_class(
@@ -391,7 +409,7 @@ const JS = {
   },
 
   toggle(eventType, view, el, display, ins, outs, time, blocking) {
-    time = time || default_transition_time;
+    time = time == null ? default_transition_time : time;
     const [inClasses, inStartClasses, inEndClasses] = ins || [[], [], []];
     const [outClasses, outStartClasses, outEndClasses] = outs || [[], [], []];
     if (inClasses.length > 0 || outClasses.length > 0) {
@@ -532,7 +550,7 @@ const JS = {
   },
 
   addOrRemoveClasses(el, adds, removes, transition, time, view, blocking) {
-    time = time || default_transition_time;
+    time = time == null ? default_transition_time : time;
     const [transitionRun, transitionStart, transitionEnd] = transition || [
       [],
       [],

@@ -228,8 +228,12 @@ defmodule Phoenix.LiveView.UploadExternalTest do
       ])
 
     assert {:error, [[ref, %{reason: "bad name"}]]} = render_upload(avatar, "bad.jpeg", 1)
-    assert {:error, [[^ref, %{reason: "bad name"}]]} = render_upload(avatar, "foo.jpeg", 1)
-    assert render(lv) =~ "bad name"
+
+    assert {:error, [[^ref, {:external_metadata_failure, %{reason: "bad name"}}]]} =
+             render_upload(avatar, "foo.jpeg", 1)
+
+    assert render(lv) =~
+             "entry_error:#{inspect_html_safe({:external_metadata_failure, %{reason: "bad name"}})}"
   end
 
   @tag allow: [
@@ -250,6 +254,9 @@ defmodule Phoenix.LiveView.UploadExternalTest do
     html = render_upload(avatar, "foo.jpeg", 1)
     assert html =~ "foo.jpeg:1%"
     assert html =~ "bad.jpeg:0%"
+
+    assert html =~
+             "entry_error:#{inspect_html_safe({:external_metadata_failure, %{reason: "bad name"}})}"
   end
 
   @tag allow: [max_entries: 2, chunk_size: 20, accept: :any, external: :preflight]
@@ -280,7 +287,13 @@ defmodule Phoenix.LiveView.UploadExternalTest do
     refute render(lv) =~ upload_complete
   end
 
-  @tag allow: [max_entries: 2, chunk_size: 20, accept: :any, external: :preflight]
+  @tag allow: [
+         max_entries: 2,
+         max_entries_mode: :total,
+         chunk_size: 20,
+         accept: :any,
+         external: :preflight
+       ]
   test "consume_uploaded_entry", %{lv: lv} do
     upload_complete = "foo.jpeg:100%"
     parent = self()
@@ -302,6 +315,25 @@ defmodule Phoenix.LiveView.UploadExternalTest do
 
     assert_receive {:individual_consume, %{uploader: "S3"}, "foo.jpeg"}
     refute render(lv) =~ upload_complete
+
+    run(lv, fn socket ->
+      assert socket.assigns.uploads.avatar.consumed_entries == 1
+
+      new_socket =
+        Phoenix.LiveView.allow_upload(socket, :avatar,
+          max_entries: 2,
+          max_entries_mode: :total,
+          chunk_size: 20,
+          accept: :any,
+          external: &__MODULE__.preflight/2
+        )
+
+      assert new_socket.assigns.uploads.avatar.consumed_entries == 0
+      {:reply, :ok, new_socket}
+    end)
+
+    retry = file_input(lv, "form", :avatar, [%{name: "retry.jpeg", content: "retry"}])
+    assert render_upload(retry, "retry.jpeg", 100) =~ "retry.jpeg:100%"
   end
 
   @tag allow: [

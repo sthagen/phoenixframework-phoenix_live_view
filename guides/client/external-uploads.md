@@ -16,6 +16,40 @@ pre-signed URL, specific to your cloud storage provider, that
 will provide temporary access for the end-user to upload data
 directly to your cloud storage.
 
+## Testing external uploads
+
+Use [`Phoenix.LiveViewTest.render_upload/3`](`Phoenix.LiveViewTest.render_upload/3`)
+to test the server-side external upload flow. It performs the preflight request,
+invokes the function configured by `:external`, and simulates the client reporting
+upload progress:
+
+```elixir
+avatar =
+  file_input(view, "#upload-form", :avatar, [
+    %{name: "avatar.png", content: "file contents", type: "image/png"}
+  ])
+
+assert render_upload(avatar, "avatar.png") =~ "100%"
+assert view |> form("#upload-form") |> render_submit() =~ "uploaded"
+```
+
+`render_upload/3` does not run the configured JavaScript uploader or send the file
+to the external service. Test the JavaScript uploader and its HTTP integration
+separately, for example with a browser-based test.
+
+To inspect only the metadata returned by the preflight request, use
+[`Phoenix.LiveViewTest.preflight_upload/1`](`Phoenix.LiveViewTest.preflight_upload/1`)
+in a separate test:
+
+```elixir
+assert {:ok, %{entries: entries}} = preflight_upload(avatar)
+assert [%{uploader: "S3", url: url}] = Map.values(entries)
+```
+
+`preflight_upload/1` does not acknowledge the response in the simulated upload
+client. Do not call `render_upload/3` afterwards with the same upload;
+`render_upload/3` performs its own preflight request automatically.
+
 ## Chunked HTTP Uploads
 
 For any service that supports large file
@@ -49,8 +83,13 @@ Supply the `:external` option to
 `Phoenix.LiveView.allow_upload/3`. It requires a 2-arity
 function that generates a signed URL where the client will
 push the bytes for the upload entry. This function must
-return either `{:ok, meta, socket}` or `{:error, meta, socket}`,
-where `meta` must be a map.
+return either `{:ok, meta, socket}` or `{:error, error_meta, socket}`,
+where `meta` and `error_meta` must be maps. Returning an error marks the
+entry as failed and makes `{:external_metadata_failure, error_meta}` available
+through `Phoenix.Component.upload_errors/2`. With auto uploads, any remaining
+valid entries continue uploading. For example:
+
+    {:error, %{reason: :presign_failed}, socket}
 
 For example, if you were using a context that provided a
 [`start_session`](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol##Start_Resumable_Session)
@@ -83,6 +122,9 @@ Uploaders.UpChunk = function(entries, onViewError){
 
     // stop uploading in the event of a view error
     onViewError(() => upload.pause())
+
+    // abort the upload if the user cancels it
+    entry.onCancel(() => upload.abort())
 
     // upload error triggers LiveView error
     upload.on("error", (e) => entry.error(e.detail.message))
@@ -206,6 +248,7 @@ Uploaders.S3 = function(entries, onViewError){
     formData.append("file", entry.file)
     let xhr = new XMLHttpRequest()
     onViewError(() => xhr.abort())
+    entry.onCancel(() => xhr.abort())
     xhr.onload = () => xhr.status === 204 ? entry.progress(100) : entry.error()
     xhr.onerror = () => entry.error()
     xhr.upload.addEventListener("progress", (event) => {
@@ -284,6 +327,7 @@ Uploaders.S3 = function (entries, onViewError) {
   entries.forEach(entry => {
     let xhr = new XMLHttpRequest()
     onViewError(() => xhr.abort())
+    entry.onCancel(() => xhr.abort())
     xhr.onload = () => xhr.status === 200 ? entry.progress(100) : entry.error()
     xhr.onerror = () => entry.error()
 

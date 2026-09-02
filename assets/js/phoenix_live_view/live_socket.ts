@@ -190,6 +190,14 @@ export interface LiveSocketOptions {
    * Defaults to `false`.
    */
   blockPhxChangeWhileComposing?: boolean;
+  /**
+   * Whether `phx-remove` commands on descendants of the outgoing main LiveView
+   * are executed during live navigation. When set to `false`, only a
+   * `phx-remove` command on the LiveView's own container is executed.
+   *
+   * Defaults to `true`.
+   */
+  cascadePhxRemoveOnNavigation?: boolean;
   /** DOM callbacks. */
   dom?: {
     /**
@@ -280,6 +288,7 @@ export default class LiveSocket {
   private boundTopLevelEvents: boolean;
   private boundEventNames: Set<string>;
   private blockPhxChangeWhileComposing: boolean;
+  private cascadePhxRemoveOnNavigation: boolean;
   private serverCloseRef: string | null;
   /** @internal */
   domCallbacks: {
@@ -383,6 +392,9 @@ export default class LiveSocket {
     this.boundEventNames = new Set();
     this.blockPhxChangeWhileComposing =
       opts.blockPhxChangeWhileComposing || false;
+    // TODO: Default to false in LiveView 2.0.
+    this.cascadePhxRemoveOnNavigation =
+      opts.cascadePhxRemoveOnNavigation ?? true;
     this.serverCloseRef = null;
     this.domCallbacks = Object.assign(
       {
@@ -922,10 +934,10 @@ export default class LiveSocket {
     this.outgoingMainEl = this.outgoingMainEl || this.main!.el;
 
     const stickies = DOM.findPhxSticky(document) || [];
-    const removeEls = DOM.all(
+    const removeEls = this.phxRemoveElementsForNavigation(
       this.outgoingMainEl!,
-      `[${this.binding("remove")}]`,
-    ).filter((el) => !DOM.isChildOfAny(el, stickies));
+      stickies,
+    );
 
     const newMainEl = DOM.cloneNode(this.outgoingMainEl, "");
     const oldMainView = this.main;
@@ -940,8 +952,14 @@ export default class LiveSocket {
     this.main.join((joinCount, onDone) => {
       if (joinCount === 1 && this.commitPendingLink(linkRef)) {
         this.requestDOMUpdate(() => {
-          // remove phx-remove els right before we replace the main element
-          removeEls.forEach((el) => el.remove());
+          // Remove descendant phx-remove elements right before we replace the
+          // main element. The outgoing main itself must remain connected so
+          // replaceWith below can swap in the new main element.
+          removeEls.forEach((el) => {
+            if (!el.isSameNode(this.outgoingMainEl)) {
+              el.remove();
+            }
+          });
           stickies.forEach((el) => newMainEl.appendChild(el));
           this.outgoingMainEl!.replaceWith(newMainEl);
           this.outgoingMainEl = null;
@@ -950,6 +968,20 @@ export default class LiveSocket {
         });
       }
     });
+  }
+
+  private phxRemoveElementsForNavigation(
+    mainEl: Element,
+    stickies = DOM.findPhxSticky(document) || [],
+  ) {
+    const removeSelector = `[${this.binding("remove")}]`;
+    const removeEls = this.cascadePhxRemoveOnNavigation
+      ? [mainEl, ...DOM.all(mainEl, removeSelector)]
+      : [mainEl];
+
+    return removeEls.filter(
+      (el) => el.matches(removeSelector) && !DOM.isChildOfAny(el, stickies),
+    );
   }
 
   /** @internal */
@@ -1156,6 +1188,15 @@ export default class LiveSocket {
       },
     );
     this.on("dragover", (e) => e.preventDefault());
+
+    // Browsers fire dragenter and dragleave when a drag crosses child element boundaries, even
+    // though it is still inside the same drop target. Track those events per drop target so that
+    // entering a child and leaving its sibling balance each other. When the drag leaves the drop
+    // target or the browser window, the final dragleave has no matching dragenter and reaches zero.
+    // This avoids relying on browser-specific pointer coordinates or relatedTarget, which is null
+    // for all dragleave events in older Safari versions.
+    const dropTargetDragDepths = new WeakMap<HTMLElement, number>();
+
     this.on("dragenter", (e) => {
       let target = e.target && DOM.elementFromTarget(e.target);
       if (!target) {
@@ -1168,7 +1209,11 @@ export default class LiveSocket {
       }
 
       if (eventContainsFiles(e)) {
-        this.js().addClass(dropzone, PHX_DROP_TARGET_ACTIVE_CLASS);
+        const dragDepth = (dropTargetDragDepths.get(dropzone) || 0) + 1;
+        dropTargetDragDepths.set(dropzone, dragDepth);
+        if (dragDepth === 1) {
+          this.js().addClass(dropzone, PHX_DROP_TARGET_ACTIVE_CLASS);
+        }
       }
     });
     this.on("dragleave", (e) => {
@@ -1182,15 +1227,13 @@ export default class LiveSocket {
         return;
       }
 
-      // Avoid add/remove jitter in the case that we drag into a new child and that child would
-      // resolve their closest drop target to the current dropzone element
-      const rect = dropzone.getBoundingClientRect();
-      if (
-        e.clientX <= rect.left ||
-        e.clientX >= rect.right ||
-        e.clientY <= rect.top ||
-        e.clientY >= rect.bottom
-      ) {
+      const dragDepth = dropTargetDragDepths.get(dropzone);
+      if (dragDepth === undefined) {
+        return;
+      } else if (dragDepth > 1) {
+        dropTargetDragDepths.set(dropzone, dragDepth - 1);
+      } else {
+        dropTargetDragDepths.delete(dropzone);
         this.js().removeClass(dropzone, PHX_DROP_TARGET_ACTIVE_CLASS);
       }
     });
@@ -1205,6 +1248,7 @@ export default class LiveSocket {
       if (!dropzone || !(dropzone instanceof HTMLElement)) {
         return;
       }
+      dropTargetDragDepths.delete(dropzone);
       this.js().removeClass(dropzone, PHX_DROP_TARGET_ACTIVE_CLASS);
 
       if (!e.dataTransfer) {
@@ -1785,7 +1829,6 @@ export default class LiveSocket {
         return;
       }
       e.preventDefault();
-      e.target.disabled = true;
       this.withinOwners(e.target, (view) => {
         JS.exec(e, "submit", phxEvent, view, e.target, [
           "push",

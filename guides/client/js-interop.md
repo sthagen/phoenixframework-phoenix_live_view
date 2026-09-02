@@ -148,7 +148,11 @@ or removed by the server, a hook object may be provided via `phx-hook`.
 
   * `mounted` - the element has been added to the DOM and its server
     LiveView has finished mounting
-  * `beforeUpdate` - the element is about to be updated in the DOM.
+  * `beforeUpdate(toEl)` - the element is about to be updated in the DOM.
+    `toEl` is a detached element carrying the update that is about to be applied,
+    while `this.el` is still the unmodified element as it currently exists in the DOM.
+    This is the per-element counterpart to the `dom` option's `onBeforeElUpdated`
+    callback described below.
     *Note*: any call here must be synchronous as the operation cannot
     be deferred or cancelled.
   * `updated` - the element has been updated in the DOM by the server.
@@ -171,7 +175,7 @@ The above life-cycle callbacks have in-scope access to the following attributes:
   * `liveSocket` - the reference to the underlying `LiveSocket` instance
   * `pushEvent(event, payload, (reply, ref) => ...)` - method to push an event from the client to the LiveView server.
     Omitting the callback returns a promise that resolves to the `reply`.
-    **Note:** the callback version silently ignores errors.
+    **Note:** the callback version silently ignores push errors. Exceptions thrown by the callback are not ignored.
   * `pushEventTo(selectorOrTarget, event, payload, (reply, ref) => ...)` - method to push targeted events from the client
     to LiveViews and LiveComponents. The `selectorOrTarget` can be a DOM element (such as `this.el`) or a query
     selector string. The event is sent to the LiveComponent or LiveView owning the targeted element(s). If a selector
@@ -179,7 +183,7 @@ The above life-cycle callbacks have in-scope access to the following attributes:
     Omitting the callback returns a promise matching
     [`Promise.allSettled()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled#return_value),
     where fulfilled values are of the format `{ reply, ref }`.
-    **Note:** the callback version silently ignores errors.
+    **Note:** the callback version silently ignores push errors. Exceptions thrown by the callback are not ignored.
   * `handleEvent(event, (payload) => ...)` - method to handle an event pushed from the server. Returns a value that can be passed to `removeHandleEvent` to remove the event handler.
   * `removeHandleEvent(ref)` - method to remove an event handler added via `handleEvent`
   * `upload(name, files)` - method to inject a list of file-like objects into an uploader.
@@ -249,6 +253,16 @@ let liveSocket = new LiveSocket("/live", Socket, {
 ```
 
 In the example above, all attributes starting with `data-js-` won't be replaced when the DOM is patched by LiveView.
+
+`onBeforeElUpdated` is called for every element LiveView is about to patch. A hook's
+`beforeUpdate(toEl)` callback receives the same `toEl` node, but only for the hooked
+element itself, and only when that element actually changed. For an element with
+`phx-update="ignore"`, it is additionally only called when the element's `data-*`
+attributes changed.
+
+In both callbacks, `toEl` is a detached node that is discarded once the patch has been
+applied. Read what you need from it synchronously; keeping a reference to it past the
+callback retains a detached element that will never reflect the live DOM.
 
 A hook can also be defined as a subclass of `ViewHook`:
 

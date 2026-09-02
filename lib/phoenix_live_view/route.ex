@@ -18,14 +18,18 @@ defmodule Phoenix.LiveView.Route do
     route.opts[:container] || route.view.__live__()[:container]
   end
 
+  def invalid_handle_params!(view) do
+    raise ArgumentError,
+          "cannot invoke handle_params/3 on #{inspect(view)} " <>
+            "because it is not mounted nor accessed through the router live/3 macro"
+  end
+
   @doc """
   Returns the internal or external matched LiveView route info for the given socket
   and uri, raises if none is available.
   """
   def live_link_info!(%Socket{router: nil}, view, _uri) do
-    raise ArgumentError,
-          "cannot invoke handle_params/3 on #{inspect(view)} " <>
-            "because it is not mounted nor accessed through the router live/3 macro"
+    invalid_handle_params!(view)
   end
 
   def live_link_info!(%Socket{} = socket, view, uri) do
@@ -47,6 +51,36 @@ defmodule Phoenix.LiveView.Route do
                 "because it isn't defined in #{inspect(socket.router)}"
     end
   end
+
+  @doc """
+  Returns the navigation type for the given socket and path.
+  """
+  def navigation_type(
+        %Socket{
+          endpoint: endpoint,
+          router: router,
+          view: current_view,
+          host_uri: %URI{} = host_uri,
+          private: %{live_session_name: current_session}
+        },
+        path
+      )
+      when is_binary(path) do
+    uri = URI.merge(host_uri, path)
+
+    case live_link_info_without_checks(endpoint, router, uri) do
+      {:internal, %Route{view: ^current_view, live_session: %{name: ^current_session}}} ->
+        :patch
+
+      {:internal, %Route{live_session: %{name: ^current_session}}} ->
+        :navigate
+
+      _ ->
+        :href
+    end
+  end
+
+  def navigation_type(%Socket{}, path) when is_binary(path), do: :href
 
   @doc """
   Returns the internal or external matched LiveView route info for the given uri.

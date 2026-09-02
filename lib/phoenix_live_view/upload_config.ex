@@ -57,12 +57,15 @@ defmodule Phoenix.LiveView.UploadConfig do
   alias Phoenix.LiveView.UploadEntry
 
   @default_max_entries 1
+  @default_max_entries_mode :selected
   @default_max_file_size 8_000_000
   @default_chunk_size 64_000
   @default_chunk_timeout 10_000
 
   @unregistered :unregistered
   @invalid :invalid
+  # Writer failures retain their entry until it is explicitly cancelled or replaced.
+  @failed :failed
 
   @too_many_files :too_many_files
 
@@ -71,7 +74,9 @@ defmodule Phoenix.LiveView.UploadConfig do
              :name,
              :ref,
              :entries,
+             :consumed_entries,
              :max_entries,
+             :max_entries_mode,
              :max_file_size,
              :accept,
              :errors,
@@ -85,10 +90,12 @@ defmodule Phoenix.LiveView.UploadConfig do
             cid: :unregistered,
             client_key: nil,
             max_entries: @default_max_entries,
+            max_entries_mode: @default_max_entries_mode,
             max_file_size: @default_max_file_size,
             chunk_size: @default_chunk_size,
             chunk_timeout: @default_chunk_timeout,
             entries: [],
+            consumed_entries: 0,
             entry_refs_to_pids: %{},
             entry_refs_to_metas: %{},
             accept: [],
@@ -109,9 +116,11 @@ defmodule Phoenix.LiveView.UploadConfig do
           cid: :unregistered | nil | integer(),
           client_key: String.t(),
           max_entries: pos_integer(),
+          max_entries_mode: :selected | :total,
           max_file_size: pos_integer(),
           entries: list(),
-          entry_refs_to_pids: %{String.t() => pid() | :unregistered | :done},
+          consumed_entries: non_neg_integer(),
+          entry_refs_to_pids: %{String.t() => pid() | :unregistered | :invalid | :failed},
           entry_refs_to_metas: %{String.t() => map()},
           accept: list() | :any,
           acceptable_types: MapSet.t(),
@@ -205,6 +214,24 @@ defmodule Phoenix.LiveView.UploadConfig do
 
         :error ->
           @default_max_entries
+      end
+
+    max_entries_mode =
+      case Keyword.fetch(opts, :max_entries_mode) do
+        {:ok, mode} when mode in [:selected, :total] ->
+          mode
+
+        {:ok, other} ->
+          raise ArgumentError, """
+          invalid :max_entries_mode value provided to allow_upload.
+
+          Only :selected and :total are supported (Defaults to :selected). Got:
+
+          #{inspect(other)}
+          """
+
+        :error ->
+          @default_max_entries_mode
       end
 
     max_file_size =
@@ -319,6 +346,7 @@ defmodule Phoenix.LiveView.UploadConfig do
       ref: random_ref,
       name: name,
       max_entries: max_entries,
+      max_entries_mode: max_entries_mode,
       max_file_size: max_file_size,
       entry_refs_to_pids: %{},
       entry_refs_to_metas: %{},
@@ -340,7 +368,7 @@ defmodule Phoenix.LiveView.UploadConfig do
   def entry_pid(%UploadConfig{} = conf, %UploadEntry{} = entry) do
     case Map.fetch(conf.entry_refs_to_pids, entry.ref) do
       {:ok, pid} when is_pid(pid) -> pid
-      {:ok, status} when status in [@unregistered, @invalid] -> nil
+      {:ok, status} when status in [@unregistered, @invalid, @failed] -> nil
     end
   end
 
@@ -362,14 +390,31 @@ defmodule Phoenix.LiveView.UploadConfig do
   def unregister_completed_external_entry(%UploadConfig{} = conf, entry_ref) do
     %UploadEntry{} = entry = get_entry_by_ref(conf, entry_ref)
 
-    drop_entry(conf, entry)
+    consume_entry(conf, entry)
   end
 
   @doc false
   def unregister_completed_entry(%UploadConfig{} = conf, entry_ref) do
-    %UploadEntry{} = entry = get_entry_by_ref(conf, entry_ref)
+    case {get_entry_by_ref(conf, entry_ref), Map.get(conf.entry_refs_to_pids, entry_ref)} do
+      {%UploadEntry{}, @failed} -> conf
+      {%UploadEntry{} = entry, _status} -> drop_entry(conf, entry)
+      {nil, _status} -> conf
+    end
+  end
 
-    drop_entry(conf, entry)
+  @doc false
+  def fail_entry(%UploadConfig{} = conf, entry_ref, reason) do
+    # the entry may already have been dropped, for example by a progress callback
+    # that cancelled it, in which case the failure report is stale
+    case get_entry_by_ref(conf, entry_ref) do
+      %UploadEntry{} ->
+        conf
+        |> put_error(entry_ref, reason)
+        |> Map.update!(:entry_refs_to_pids, &Map.put(&1, entry_ref, @failed))
+
+      nil ->
+        conf
+    end
   end
 
   @doc false
@@ -401,6 +446,10 @@ defmodule Phoenix.LiveView.UploadConfig do
 
       {:ok, existing_pid} when is_pid(existing_pid) ->
         {:error, :already_registered}
+
+      # the entry is retained, but it may no longer be uploaded to
+      {:ok, status} when status in [@invalid, @failed] ->
+        {:error, :disallowed}
 
       :error ->
         {:error, :disallowed}
@@ -545,10 +594,10 @@ defmodule Phoenix.LiveView.UploadConfig do
   end
 
   defp maybe_replace_sole_entry(%UploadConfig{max_entries: 1} = conf, new_entries) do
-    with [entry] <- conf.entries,
-         [new_entry] <- new_entries,
-         true <- entry.ref != Map.fetch!(new_entry, "ref") do
-      cancel_entry(conf, entry)
+    with [new_entry] <- new_entries,
+         new_ref = Map.fetch!(new_entry, "ref"),
+         nil <- get_entry_by_ref(conf, new_ref) do
+      Enum.reduce(conf.entries, conf, fn entry, conf -> cancel_entry(conf, entry) end)
     else
       _ -> conf
     end
@@ -558,8 +607,9 @@ defmodule Phoenix.LiveView.UploadConfig do
     conf
   end
 
-  defp too_many_files?(%UploadConfig{entries: entries, max_entries: max}) do
-    length(entries) > max
+  defp too_many_files?(%UploadConfig{entries: entries, max_entries: max} = conf) do
+    consumed_entries = if conf.max_entries_mode == :total, do: conf.consumed_entries, else: 0
+    consumed_entries + length(entries) > max
   end
 
   defp cast_and_validate_entry(%UploadConfig{} = conf, %{"ref" => ref} = client_entry) do
@@ -689,7 +739,10 @@ defmodule Phoenix.LiveView.UploadConfig do
   end
 
   def put_error(%UploadConfig{} = conf, entry_ref, reason) do
-    %{conf | errors: conf.errors ++ [{entry_ref, reason}]}
+    # entries with errors are retained, so the same error can be reported more than
+    # once for the same entry, for example by repeated external client failures
+    pair = {entry_ref, reason}
+    %{conf | errors: List.delete(conf.errors, pair) ++ [pair]}
   end
 
   @doc false
@@ -702,6 +755,17 @@ defmodule Phoenix.LiveView.UploadConfig do
       _ ->
         drop_entry(conf, entry)
     end
+  end
+
+  @doc false
+  def consume_entry(%UploadConfig{max_entries_mode: :selected} = conf, %UploadEntry{} = entry) do
+    drop_entry(conf, entry)
+  end
+
+  def consume_entry(%UploadConfig{} = conf, %UploadEntry{} = entry) do
+    conf
+    |> Map.update!(:consumed_entries, &(&1 + 1))
+    |> drop_entry(entry)
   end
 
   @doc false

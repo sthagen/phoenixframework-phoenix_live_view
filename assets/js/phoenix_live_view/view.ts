@@ -108,7 +108,7 @@ export default class View {
   private childJoins: number;
   private loaderTimer: ReturnType<typeof setTimeout> | null;
   private disconnectedTimer: ReturnType<typeof setTimeout> | null;
-  private pendingDiffs: any[];
+  private pendingDiffs: { diff: any; events: any; joinCount: number }[];
   private redirect: boolean;
   private href: string | null;
   private joinCount: number;
@@ -123,6 +123,7 @@ export default class View {
   private children: Record<string, Record<string, View>> | null;
   private pendingForms: Set<string>;
   private formsForRecovery: Record<string, HTMLFormElement>;
+  private activeUploaders: Set<LiveUploader>;
 
   constructor(
     el: Element,
@@ -177,6 +178,7 @@ export default class View {
     this.disconnectedTimer = null;
     this.pendingDiffs = [];
     this.pendingForms = new Set();
+    this.activeUploaders = new Set();
     this.redirect = false;
     this.href = null;
     this.joinCount = this.parent ? this.parent.joinCount - 1 : 0;
@@ -259,9 +261,12 @@ export default class View {
   }
 
   destroy(callback = function () {}) {
+    JS.dropFocus(this);
     this.destroyAllChildren();
     this.destroyPortalElements();
     this.destroyed = true;
+    this.activeUploaders.forEach((uploader) => uploader.cancel());
+    this.activeUploaders.clear();
     DOM.deletePrivate(this.el, "view");
     delete this.root.children![this.id];
     if (this.parent) {
@@ -653,7 +658,7 @@ export default class View {
       !fromEl.isEqualNode(toEl) &&
       !(isIgnored && isEqualObj(fromEl.dataset, toEl.dataset))
     ) {
-      hook.__beforeUpdate();
+      hook.__beforeUpdate(toEl);
       return hook;
     }
   }
@@ -678,6 +683,7 @@ export default class View {
     const removedEls: Array<Element> = [];
     let phxChildrenAdded = false;
     const updatedHookIds = new Set();
+    const newHookIds = new Set();
 
     this.liveSocket.triggerDOM("onPatchStart", [patch.targetContainer]);
 
@@ -700,10 +706,35 @@ export default class View {
       }
     });
 
+    // hoisted out of the callback below, which runs for every patched element
+    const hookAttr = this.binding(PHX_HOOK);
+    const privateHookAttr = `data-phx-${PHX_HOOK}`;
+
     patch.beforeUpdated((fromEl, toEl) => {
       const hook = this.triggerBeforeUpdateHook(fromEl, toEl);
       if (hook) {
-        updatedHookIds.add(fromEl.id);
+        if (
+          fromEl.hasAttribute(hookAttr) &&
+          fromEl.getAttribute(hookAttr) !== toEl.getAttribute(hookAttr)
+        ) {
+          // dynamically removed hook
+          // (data-phx-hook from createHook or viewport bindings cannot be removed)
+          this.destroyHook(hook);
+          if (toEl.getAttribute(hookAttr)) {
+            // changed hook
+            newHookIds.add(toEl.id);
+          }
+        } else {
+          updatedHookIds.add(fromEl.id);
+        }
+      } else if (toEl.id && toEl.getAttribute && !this.getHook(fromEl)) {
+        // triggerBeforeUpdateHook also returns nothing when the element is
+        // unchanged, so only look for a dynamically added hook when there is
+        // really no hook attached to the element yet; otherwise every already
+        // hooked element would run through maybeAddNewHook on every patch.
+        if (toEl.getAttribute(hookAttr) || toEl.getAttribute(privateHookAttr)) {
+          newHookIds.add(toEl.id);
+        }
       }
       // trigger JS specific update logic (for example for JS.ignore_attributes)
       JS.onBeforeElUpdated(fromEl, toEl);
@@ -713,6 +744,8 @@ export default class View {
       if (updatedHookIds.has(el.id)) {
         const hook = this.getHook(el);
         hook && hook.__updated();
+      } else if (newHookIds.has(el.id)) {
+        this.maybeAddNewHook(el);
       }
     });
 
@@ -784,7 +817,7 @@ export default class View {
     template.innerHTML = html;
 
     if (!template.content.firstElementChild) {
-      return;
+      return callback();
     }
 
     // we special case <.portal> here and teleport it into our temporary DOM for recovery
@@ -929,7 +962,10 @@ export default class View {
     ) {
       // don't mutate if this is already a pending diff
       if (!isPending) {
-        this.pendingDiffs.push({ diff, events });
+        // A diff only applies to the tree it was computed against. Remember
+        // which join produced that tree, so a rejoin in the meantime can tell
+        // this diff apart from one belonging to the tree it replaced.
+        this.pendingDiffs.push({ diff, events, joinCount: this.joinCount });
       }
       return false;
     }
@@ -1116,7 +1152,24 @@ export default class View {
     // navigation or the join is still pending, `this.update` returns false
     // if the diff was not applied.
     this.pendingDiffs = this.pendingDiffs.filter(
-      ({ diff, events }) => !this.update(diff, events, true),
+      ({ diff, events, joinCount }) => {
+        // A rejoin mounts a new LiveView: its full render replaced this.rendered
+        // and its fingerprints start over. A diff buffered against the previous
+        // tree is not merge-compatible with the one that replaced it, so drop it
+        // rather than merge it into a tree it was never computed against.
+        if (joinCount !== this.joinCount) {
+          this.log(
+            "update",
+            () => ["discarded diff from previous join", diff],
+            {
+              code: "view.stale-diff-discarded",
+              metadata: () => ({ joinCount, currentJoinCount: this.joinCount }),
+            },
+          );
+          return false;
+        }
+        return !this.update(diff, events, true);
+      },
     );
     this.eachChild((child) => child.applyPendingUpdates());
   }
@@ -1327,6 +1380,7 @@ export default class View {
           },
         );
         this.destroy();
+        return;
       }
       const trueChildEl = DOM.byId(this.el.id);
       if (trueChildEl) {
@@ -1491,6 +1545,7 @@ export default class View {
           }
         },
         error: (reason) => {
+          onLoadingDone();
           resolve({
             type: "error",
             error: `failed with reason: ${JSON.stringify(reason)}`,
@@ -1500,6 +1555,7 @@ export default class View {
           });
         },
         timeout: () => {
+          onLoadingDone();
           resolve({
             type: "error",
             error: "push timeout",
@@ -2204,7 +2260,9 @@ export default class View {
     // for phx-trigger-action
     DOM.putPrivate(formEl, "submitter", submitter);
     const cid = this.targetComponentID(formEl, targetCtx);
-    if (LiveUploader.hasUploadsInProgress(formEl)) {
+    if (LiveUploader.hasUploadErrors(formEl)) {
+      return this.cancelSubmit(formEl, phxEvent);
+    } else if (LiveUploader.hasUploadsInProgress(formEl)) {
       const [ref, _els] = refGenerator();
       const push = () =>
         this.pushFormSubmit(
@@ -2289,17 +2347,20 @@ export default class View {
     // get each file input
     inputEls.forEach((inputEl) => {
       const uploader = new LiveUploader(inputEl, this, () => {
+        this.activeUploaders.delete(uploader);
         numFileInputsInProgress--;
         if (numFileInputsInProgress === 0) {
           onComplete();
         }
       });
+      this.activeUploaders.add(uploader);
 
       const entries = uploader
         .entries()
         .map((entry) => entry.toPreflightPayload());
 
       if (entries.length === 0) {
+        this.activeUploaders.delete(uploader);
         numFileInputsInProgress--;
         return;
       }
@@ -2343,6 +2404,7 @@ export default class View {
             errors.map(([entry_ref, reason]) => {
               this.handleFailedEntryPreflight(entry_ref, reason, uploader);
             });
+            this.activeUploaders.delete(uploader);
           } else {
             const onError = (callback) => {
               this.channel.onError(() => {
@@ -2354,6 +2416,7 @@ export default class View {
             uploader.initAdapterUpload(result.resp, onError, this.liveSocket);
           }
         } else {
+          this.activeUploaders.delete(uploader);
           this.logError(
             "upload.push-failed",
             "Failed to push upload",
