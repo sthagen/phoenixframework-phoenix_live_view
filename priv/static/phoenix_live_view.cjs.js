@@ -485,11 +485,6 @@ var DOM = {
     }
     return array;
   },
-  childNodeLength(html) {
-    const template = document.createElement("template");
-    template.innerHTML = html;
-    return template.content.childElementCount;
-  },
   isUploadInput(el) {
     return el.type === "file" && el.getAttribute(PHX_UPLOAD_REF) !== null;
   },
@@ -906,7 +901,7 @@ var DOM = {
     }
   },
   hasSelectionRange(el) {
-    return el.setSelectionRange && (el.type === "text" || el.type === "textarea");
+    return el.setSelectionRange && ["text", "textarea", "search", "url", "tel", "password"].includes(el.type);
   },
   restoreFocus(focused, selectionStart, selectionEnd) {
     if (focused instanceof HTMLSelectElement) {
@@ -1014,11 +1009,6 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
     } else {
       return typeof defaultVal === "function" ? defaultVal() : defaultVal;
     }
-  },
-  deleteSticky(el, name) {
-    this.updatePrivate(el, "sticky", [], (ops) => {
-      return ops.filter(([existingName, _]) => existingName !== name);
-    });
   },
   putSticky(el, name, op) {
     const stashedResult = op(el);
@@ -1288,8 +1278,7 @@ var LiveUploader = class _LiveUploader {
     }
   }
   static activeFileInputs(formEl) {
-    const fileInputs = dom_default.findUploadInputs(formEl);
-    return Array.from(fileInputs).filter(
+    return dom_default.findUploadInputs(formEl).filter(
       (el) => el.files && this.activeFiles(el).length > 0
     );
   }
@@ -1299,8 +1288,7 @@ var LiveUploader = class _LiveUploader {
     );
   }
   static inputsAwaitingPreflight(formEl) {
-    const fileInputs = dom_default.findUploadInputs(formEl);
-    return Array.from(fileInputs).filter(
+    return dom_default.findUploadInputs(formEl).filter(
       (input) => this.filesAwaitingPreflight(input).length > 0
     );
   }
@@ -1711,11 +1699,11 @@ var hooks_default = Hooks;
 // js/phoenix_live_view/element_ref.ts
 var ElementRef = class {
   static onUnlock(el, callback) {
-    if (!dom_default.isLocked(el) && !el.closest(`[${PHX_REF_LOCK}]`)) {
+    const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
+    if (!closestLock) {
       return callback();
     }
-    const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
-    const ref = closestLock.closest(`[${PHX_REF_LOCK}]`).getAttribute(PHX_REF_LOCK);
+    const ref = closestLock.getAttribute(PHX_REF_LOCK);
     closestLock.addEventListener(
       `phx:undo-lock:${ref}`,
       () => {
@@ -2577,15 +2565,15 @@ var DOMPatch = class {
           } else if (streamAt === -1) {
             const lastChild = parent.lastElementChild;
             if (lastChild && !lastChild.hasAttribute(PHX_STREAM_REF)) {
-              const nonStreamChild = Array.from(parent.children).find(
-                (c) => !c.hasAttribute(PHX_STREAM_REF)
+              const nonStreamChild = parent.querySelector(
+                `:scope > :not([${PHX_STREAM_REF}])`
               );
-              parent.insertBefore(child, nonStreamChild ?? null);
+              parent.insertBefore(child, nonStreamChild);
             } else {
               parent.appendChild(child);
             }
           } else if (streamAt > 0) {
-            const sibling = Array.from(parent.children)[streamAt];
+            const sibling = parent.children[streamAt] ?? null;
             parent.insertBefore(child, sibling);
           }
         },
@@ -3025,9 +3013,6 @@ var DOMPatch = class {
     if (this.undoRef === null || !dom_default.private(toEl, PHX_REF_LOCK))
       return;
     dom_default.putPrivate(fromEl, PHX_REF_LOCK, dom_default.private(toEl, PHX_REF_LOCK));
-  }
-  indexOf(parent, child) {
-    return Array.from(parent.children).indexOf(child);
   }
   teleport(el, morph) {
     const targetSelector = el.getAttribute(PHX_PORTAL);
@@ -3666,8 +3651,8 @@ var Rendered = class {
     }
     if (rendered[STREAM]) {
       const stream = rendered[STREAM];
-      const [_ref, _inserts, deleteIds, reset] = stream || [null, {}, [], null];
-      if (stream !== void 0 && (rendered[KEYED][KEYED_COUNT] > 0 || deleteIds.length > 0 || reset)) {
+      const [_ref, _inserts, deleteIds, reset] = stream;
+      if (rendered[KEYED][KEYED_COUNT] > 0 || deleteIds.length > 0 || reset) {
         delete rendered[STREAM];
         rendered[KEYED] = {
           [KEYED_COUNT]: 0
@@ -3684,7 +3669,9 @@ var Rendered = class {
         output.onlyCids
       );
       output.buffer.write(str);
-      output.streams = /* @__PURE__ */ new Set([...output.streams, ...streams]);
+      for (const s of streams) {
+        output.streams.add(s);
+      }
     } else if (isObject(rendered)) {
       this.toOutputBuffer(rendered, templates, output, changeTracking, {});
     } else {
@@ -4327,10 +4314,10 @@ var js_commands_default = (liveSocket, eventType) => {
     },
     push(el, type, opts = {}) {
       liveSocket.withinOwners(el, (view) => {
-        const data = opts.value || {};
-        delete opts.value;
+        const { value, ...rest } = opts;
+        const data = value || {};
         let e = new CustomEvent("phx:exec", { detail: { sourceElement: el } });
-        js_default.exec(e, eventType, type, view, el, ["push", { data, ...opts }]);
+        js_default.exec(e, eventType, type, view, el, ["push", { data, ...rest }]);
       });
     },
     navigate(href, opts = {}) {
@@ -4499,8 +4486,10 @@ var ViewHook = class _ViewHook {
   }
   /** @internal */
   __disconnected() {
-    this.__isDisconnected = true;
-    this.disconnected();
+    if (!this.__isDisconnected) {
+      this.__isDisconnected = true;
+      this.disconnected();
+    }
   }
   js() {
     return {

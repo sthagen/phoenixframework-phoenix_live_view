@@ -20,6 +20,18 @@ var LiveView = (() => {
     return a;
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+  var __objRest = (source, exclude) => {
+    var target = {};
+    for (var prop in source)
+      if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+        target[prop] = source[prop];
+    if (source != null && __getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(source)) {
+        if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+          target[prop] = source[prop];
+      }
+    return target;
+  };
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
@@ -501,11 +513,6 @@ var LiveView = (() => {
       }
       return array;
     },
-    childNodeLength(html) {
-      const template = document.createElement("template");
-      template.innerHTML = html;
-      return template.content.childElementCount;
-    },
     isUploadInput(el) {
       return el.type === "file" && el.getAttribute(PHX_UPLOAD_REF) !== null;
     },
@@ -923,7 +930,7 @@ var LiveView = (() => {
       }
     },
     hasSelectionRange(el) {
-      return el.setSelectionRange && (el.type === "text" || el.type === "textarea");
+      return el.setSelectionRange && ["text", "textarea", "search", "url", "tel", "password"].includes(el.type);
     },
     restoreFocus(focused, selectionStart, selectionEnd) {
       if (focused instanceof HTMLSelectElement) {
@@ -1031,11 +1038,6 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       } else {
         return typeof defaultVal === "function" ? defaultVal() : defaultVal;
       }
-    },
-    deleteSticky(el, name) {
-      this.updatePrivate(el, "sticky", [], (ops) => {
-        return ops.filter(([existingName, _]) => existingName !== name);
-      });
     },
     putSticky(el, name, op) {
       const stashedResult = op(el);
@@ -1305,8 +1307,7 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       }
     }
     static activeFileInputs(formEl) {
-      const fileInputs = dom_default.findUploadInputs(formEl);
-      return Array.from(fileInputs).filter(
+      return dom_default.findUploadInputs(formEl).filter(
         (el) => el.files && this.activeFiles(el).length > 0
       );
     }
@@ -1316,8 +1317,7 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       );
     }
     static inputsAwaitingPreflight(formEl) {
-      const fileInputs = dom_default.findUploadInputs(formEl);
-      return Array.from(fileInputs).filter(
+      return dom_default.findUploadInputs(formEl).filter(
         (input) => this.filesAwaitingPreflight(input).length > 0
       );
     }
@@ -1730,11 +1730,11 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
   // js/phoenix_live_view/element_ref.ts
   var ElementRef = class {
     static onUnlock(el, callback) {
-      if (!dom_default.isLocked(el) && !el.closest(`[${PHX_REF_LOCK}]`)) {
+      const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
+      if (!closestLock) {
         return callback();
       }
-      const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
-      const ref = closestLock.closest(`[${PHX_REF_LOCK}]`).getAttribute(PHX_REF_LOCK);
+      const ref = closestLock.getAttribute(PHX_REF_LOCK);
       closestLock.addEventListener(
         `phx:undo-lock:${ref}`,
         () => {
@@ -2587,6 +2587,7 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
           },
           // tell morphdom how to add a child
           addChild: (parent, child) => {
+            var _a;
             const { ref, streamAt } = this.getStreamInsert(child);
             if (ref === void 0) {
               return parent.appendChild(child);
@@ -2597,15 +2598,15 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
             } else if (streamAt === -1) {
               const lastChild = parent.lastElementChild;
               if (lastChild && !lastChild.hasAttribute(PHX_STREAM_REF)) {
-                const nonStreamChild = Array.from(parent.children).find(
-                  (c) => !c.hasAttribute(PHX_STREAM_REF)
+                const nonStreamChild = parent.querySelector(
+                  `:scope > :not([${PHX_STREAM_REF}])`
                 );
-                parent.insertBefore(child, nonStreamChild != null ? nonStreamChild : null);
+                parent.insertBefore(child, nonStreamChild);
               } else {
                 parent.appendChild(child);
               }
             } else if (streamAt > 0) {
-              const sibling = Array.from(parent.children)[streamAt];
+              const sibling = (_a = parent.children[streamAt]) != null ? _a : null;
               parent.insertBefore(child, sibling);
             }
           },
@@ -3047,9 +3048,6 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       if (this.undoRef === null || !dom_default.private(toEl, PHX_REF_LOCK))
         return;
       dom_default.putPrivate(fromEl, PHX_REF_LOCK, dom_default.private(toEl, PHX_REF_LOCK));
-    }
-    indexOf(parent, child) {
-      return Array.from(parent.children).indexOf(child);
     }
     teleport(el, morph) {
       const targetSelector = el.getAttribute(PHX_PORTAL);
@@ -3689,8 +3687,8 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       }
       if (rendered[STREAM]) {
         const stream = rendered[STREAM];
-        const [_ref, _inserts, deleteIds, reset] = stream || [null, {}, [], null];
-        if (stream !== void 0 && (rendered[KEYED][KEYED_COUNT] > 0 || deleteIds.length > 0 || reset)) {
+        const [_ref, _inserts, deleteIds, reset] = stream;
+        if (rendered[KEYED][KEYED_COUNT] > 0 || deleteIds.length > 0 || reset) {
           delete rendered[STREAM];
           rendered[KEYED] = {
             [KEYED_COUNT]: 0
@@ -3707,7 +3705,9 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
           output.onlyCids
         );
         output.buffer.write(str);
-        output.streams = /* @__PURE__ */ new Set([...output.streams, ...streams]);
+        for (const s of streams) {
+          output.streams.add(s);
+        }
       } else if (isObject(rendered)) {
         this.toOutputBuffer(rendered, templates, output, changeTracking, {});
       } else {
@@ -4350,10 +4350,10 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       },
       push(el, type, opts = {}) {
         liveSocket.withinOwners(el, (view) => {
-          const data = opts.value || {};
-          delete opts.value;
+          const _a = opts, { value } = _a, rest = __objRest(_a, ["value"]);
+          const data = value || {};
           let e = new CustomEvent("phx:exec", { detail: { sourceElement: el } });
-          js_default.exec(e, eventType, type, view, el, ["push", __spreadValues({ data }, opts)]);
+          js_default.exec(e, eventType, type, view, el, ["push", __spreadValues({ data }, rest)]);
         });
       },
       navigate(href, opts = {}) {
@@ -4522,8 +4522,10 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
     }
     /** @internal */
     __disconnected() {
-      this.__isDisconnected = true;
-      this.disconnected();
+      if (!this.__isDisconnected) {
+        this.__isDisconnected = true;
+        this.disconnected();
+      }
     }
     js() {
       return __spreadProps(__spreadValues({}, js_commands_default(this.__view().liveSocket, "hook")), {

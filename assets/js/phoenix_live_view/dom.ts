@@ -83,12 +83,6 @@ const DOM = {
     return array;
   },
 
-  childNodeLength(html) {
-    const template = document.createElement("template");
-    template.innerHTML = html;
-    return template.content.childElementCount;
-  },
-
   isUploadInput(el): el is HTMLInputElement {
     return el.type === "file" && el.getAttribute(PHX_UPLOAD_REF) !== null;
   },
@@ -655,7 +649,8 @@ const DOM = {
 
   hasSelectionRange(el): el is HTMLInputElement | HTMLTextAreaElement {
     return (
-      el.setSelectionRange && (el.type === "text" || el.type === "textarea")
+      el.setSelectionRange &&
+      ["text", "textarea", "search", "url", "tel", "password"].includes(el.type)
     );
   },
 
@@ -816,12 +811,6 @@ const DOM = {
     } else {
       return typeof defaultVal === "function" ? defaultVal() : defaultVal;
     }
-  },
-
-  deleteSticky(el, name) {
-    this.updatePrivate(el, "sticky", [], (ops) => {
-      return ops.filter(([existingName, _]) => existingName !== name);
-    });
   },
 
   putSticky(el, name, op) {

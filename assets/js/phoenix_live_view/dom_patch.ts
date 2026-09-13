@@ -234,15 +234,15 @@ export default class DOMPatch {
           } else if (streamAt === -1) {
             const lastChild = parent.lastElementChild;
             if (lastChild && !lastChild.hasAttribute(PHX_STREAM_REF)) {
-              const nonStreamChild = Array.from(parent.children).find(
-                (c) => !c.hasAttribute(PHX_STREAM_REF),
+              const nonStreamChild = parent.querySelector(
+                `:scope > :not([${PHX_STREAM_REF}])`,
               );
-              parent.insertBefore(child, nonStreamChild ?? null);
+              parent.insertBefore(child, nonStreamChild);
             } else {
               parent.appendChild(child);
             }
           } else if (streamAt > 0) {
-            const sibling = Array.from(parent.children)[streamAt];
+            const sibling = parent.children[streamAt] ?? null;
             parent.insertBefore(child, sibling);
           }
         },
@@ -854,10 +854,6 @@ export default class DOMPatch {
     if (this.undoRef === null || !DOM.private(toEl, PHX_REF_LOCK)) return;
 
     DOM.putPrivate(fromEl, PHX_REF_LOCK, DOM.private(toEl, PHX_REF_LOCK));
-  }
-
-  private indexOf(parent, child) {
-    return Array.from(parent.children).indexOf(child);
   }
 
   private teleport(el, morph) {
