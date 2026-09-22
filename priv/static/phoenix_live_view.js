@@ -2536,7 +2536,7 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
       let targetContainer = this.targetContainer;
       if (this.targetCID) {
         const closestLock = targetContainer.closest(`[${PHX_REF_LOCK}]`);
-        if (closestLock && !closestLock.isSameNode(targetContainer)) {
+        if (closestLock && !closestLock.isSameNode(targetContainer) && view.ownsElement(closestLock)) {
           const clonedTree = dom_default.private(closestLock, PHX_REF_LOCK);
           if (clonedTree) {
             targetContainer = clonedTree.querySelector(
@@ -3074,12 +3074,15 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
         }
         portalTarget = existing;
       } else {
-        portalTarget = document.createElement(toTeleport.tagName);
+        portalTarget = document.createElementNS(
+          toTeleport.namespaceURI,
+          toTeleport.localName
+        );
         portalContainer.appendChild(portalTarget);
       }
       toTeleport.setAttribute(PHX_TELEPORTED_REF, this.view.id);
       toTeleport.setAttribute(PHX_TELEPORTED_SRC, el.id);
-      morph(portalTarget, toTeleport, true);
+      morph(portalTarget, toTeleport.cloneNode(true), true);
       toTeleport.removeAttribute(PHX_TELEPORTED_REF);
       toTeleport.removeAttribute(PHX_TELEPORTED_SRC);
       this.view.pushPortalElementId(toTeleport.id);
@@ -6806,7 +6809,7 @@ removing illegal node: "${("outerHTML" in childNode && childNode.outerHTML || ch
      * Returns the version of the LiveView client.
      */
     version() {
-      return "1.2.11";
+      return "1.3.0-dev";
     }
     /**
      * Returns true if profiling is enabled. See {@link enableProfiling} and {@link disableProfiling}.

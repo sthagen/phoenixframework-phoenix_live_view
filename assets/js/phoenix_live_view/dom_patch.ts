@@ -147,7 +147,16 @@ export default class DOMPatch {
       const closestLock = targetContainer.closest(`[${PHX_REF_LOCK}]`);
       // If the targetContainer itself is locked, that's okay.
       // https://github.com/phoenixframework/phoenix_live_view/issues/4088
-      if (closestLock && !closestLock.isSameNode(targetContainer)) {
+      //
+      // A lock outside of this view (e.g. a parent LiveView locking an element that
+      // contains this nested LiveView) is ignored: its cloned tree is only maintained
+      // by the owning view, and undoing the lock does not patch nested LiveViews.
+      // https://github.com/phoenixframework/phoenix_live_view/issues/4444
+      if (
+        closestLock &&
+        !closestLock.isSameNode(targetContainer) &&
+        view.ownsElement(closestLock)
+      ) {
         const clonedTree = DOM.private(closestLock, PHX_REF_LOCK);
         if (clonedTree) {
           // if a parent is locked with a cloned tree, we need to patch the cloned tree instead
@@ -887,7 +896,10 @@ export default class DOMPatch {
       portalTarget = existing;
     } else {
       // create empty target and morph it recursively
-      portalTarget = document.createElement(toTeleport.tagName);
+      portalTarget = document.createElementNS(
+        toTeleport.namespaceURI,
+        toTeleport.localName,
+      );
       portalContainer.appendChild(portalTarget);
     }
     // mark the target as teleported;
@@ -897,7 +909,10 @@ export default class DOMPatch {
     // and we'd need to set it back after each morph
     toTeleport.setAttribute(PHX_TELEPORTED_REF, this.view.id);
     toTeleport.setAttribute(PHX_TELEPORTED_SRC, el.id);
-    morph(portalTarget, toTeleport, true);
+    // We need to clone the element, because in some cases morphdom might
+    // morph the same element multiple times and morphdom modifies the source
+    // element.
+    morph(portalTarget, toTeleport.cloneNode(true), true);
     toTeleport.removeAttribute(PHX_TELEPORTED_REF);
     toTeleport.removeAttribute(PHX_TELEPORTED_SRC);
     // store a reference to the teleported element in the view
