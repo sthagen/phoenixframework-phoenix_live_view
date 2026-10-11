@@ -380,6 +380,18 @@ defmodule Phoenix.LiveView.Channel do
     handle_changed(state, new_socket, nil)
   end
 
+  def handle_info({Phoenix.LiveView.PubSub, ref, message}, state) when is_reference(ref) do
+    subscribers = Phoenix.LiveView.PubSub.subscribers(ref)
+
+    Enum.reduce_while(subscribers, {:noreply, state}, fn
+      {cid_or_root, callback}, {:noreply, state} ->
+        case handle_pubsub_callback(cid_or_root, callback, message, state) do
+          {:noreply, _state} = result -> {:cont, result}
+          result -> {:halt, result}
+        end
+    end)
+  end
+
   def handle_info(msg, %{socket: socket} = state) do
     msg
     |> view_handle_info(socket)
@@ -1141,9 +1153,9 @@ defmodule Phoenix.LiveView.Channel do
 
     diff = Diff.render_private(socket, diff)
     new_socket = Utils.clear_temp(socket)
+    new_state = destroy_discarded_components(%{state | socket: new_socket}, fingerprints)
 
-    {:diff, diff,
-     %{state | socket: new_socket, fingerprints: fingerprints, components: components}}
+    {:diff, diff, %{new_state | fingerprints: fingerprints, components: components}}
   end
 
   defp reply(state, {ref, extra}, status, payload) do
@@ -1292,6 +1304,7 @@ defmodule Phoenix.LiveView.Channel do
     } = phx_socket
 
     Process.put(:"$initial_call", {view, :mount, 3})
+    Phoenix.LiveView.PubSub.init()
 
     case params do
       %{"caller" => {pid, _}} when is_pid(pid) -> Process.put(:"$callers", [pid])
@@ -1692,37 +1705,51 @@ defmodule Phoenix.LiveView.Channel do
   end
 
   defp delete_components(state, cids) do
-    upload_cids = Enum.into(state.upload_names, MapSet.new(), fn {_name, {_ref, cid}} -> cid end)
-
     Enum.flat_map_reduce(cids, state, fn cid, acc ->
       {deleted_cids, new_components} = Diff.delete_component(cid, acc.components)
-
-      canceled_confs =
-        Enum.flat_map(deleted_cids, fn deleted_cid ->
-          read_socket(acc, deleted_cid, fn c_socket, component ->
-            :telemetry.execute([:phoenix, :live_component, :destroyed], %{}, %{
-              socket: c_socket,
-              component: component,
-              cid: deleted_cid,
-              live_view_socket: acc.socket
-            })
-
-            cancel_asyncs(c_socket)
-
-            if deleted_cid in upload_cids do
-              {_new_c_socket, canceled_confs} = Upload.maybe_cancel_uploads(c_socket)
-              canceled_confs
-            else
-              []
-            end
-          end)
-        end)
-
-      new_state =
-        Enum.reduce(canceled_confs, acc, fn conf, acc -> drop_upload_name(acc, conf.name) end)
-
+      new_state = destroy_components(acc, deleted_cids)
       {deleted_cids, %{new_state | components: new_components}}
     end)
+  end
+
+  # Diff.render/4 discards all components when the root fingerprint changes,
+  # for example when render/1 returns a different template. Those components
+  # never go through delete_components/2, so we destroy them here.
+  defp destroy_discarded_components(%{fingerprints: {old_print, _}} = state, {new_print, _})
+       when old_print != nil and old_print != new_print do
+    {cid_to_component, _id_to_cid, _uuids} = state.components
+    destroy_components(state, Map.keys(cid_to_component))
+  end
+
+  defp destroy_discarded_components(state, _new_fingerprints), do: state
+
+  # The components must still be in state.components.
+  defp destroy_components(state, cids) do
+    upload_cids = MapSet.new(state.upload_names, fn {_name, {_ref, cid}} -> cid end)
+
+    canceled_confs =
+      Enum.flat_map(cids, fn cid ->
+        read_socket(state, cid, fn c_socket, component ->
+          :telemetry.execute([:phoenix, :live_component, :destroyed], %{}, %{
+            socket: c_socket,
+            component: component,
+            cid: cid,
+            live_view_socket: state.socket
+          })
+
+          cancel_asyncs(c_socket)
+          Phoenix.LiveView.PubSub.unsubscribe_cid(cid)
+
+          if cid in upload_cids do
+            {_new_c_socket, canceled_confs} = Upload.maybe_cancel_uploads(c_socket)
+            canceled_confs
+          else
+            []
+          end
+        end)
+      end)
+
+    Enum.reduce(canceled_confs, state, fn conf, acc -> drop_upload_name(acc, conf.name) end)
   end
 
   defp ensure_unique_upload_name!(state, conf) do
@@ -1850,5 +1877,42 @@ defmodule Phoenix.LiveView.Channel do
       %{} ->
         pids
     end
+  end
+
+  defp handle_pubsub_callback(:root, callback, msg, %{socket: socket} = state) do
+    case callback.(msg, socket) do
+      %Socket{} = new_socket ->
+        handle_changed(state, new_socket, nil)
+
+      result ->
+        raise ArgumentError, """
+        expected pubsub subscription callback to return a %Socket{}, got:
+
+        #{inspect(result)}
+        """
+    end
+  end
+
+  defp handle_pubsub_callback(cid, callback, msg, state) when is_integer(cid) do
+    component_handle(state, cid, nil, fn component_socket, _component ->
+      case callback.(msg, component_socket) do
+        %Socket{redirected: redirected, assigns: assigns} = new_component_socket ->
+          new_component_socket =
+            if redirected do
+              Utils.clear_flash(new_component_socket)
+            else
+              new_component_socket
+            end
+
+          {new_component_socket, {redirected, assigns.flash}}
+
+        result ->
+          raise ArgumentError, """
+          expected LiveComponent pubsub subscription callback to return a %Socket{}, got:
+
+          #{inspect(result)}
+          """
+      end
+    end)
   end
 end

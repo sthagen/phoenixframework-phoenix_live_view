@@ -1,6 +1,8 @@
 import EntryUploader from "phoenix_live_view/entry_uploader";
 
 describe("EntryUploader", () => {
+  afterEach(() => jest.restoreAllMocks());
+
   test("passes channel-error reply reason as string to entry.error", () => {
     let errorCb;
     let form = {};
@@ -30,11 +32,14 @@ describe("EntryUploader", () => {
     // Reply payload arrives as {reason: "..."}, not as a string.
     errorCb({ reason: "join crashed" });
 
-    expect(cancelSubmit).toHaveBeenCalledWith(form);
+    expect(cancelSubmit).toHaveBeenCalledWith(form, {
+      reason: "upload-failed",
+      inputs: [entry.fileEl],
+    });
     expect(entry.error).toHaveBeenCalledWith("join crashed");
   });
 
-  test("writer errors remain pending without sending a generic entry error", () => {
+  test("writer errors fail the entry without sending a generic entry error", () => {
     let errorCb;
     let channelErrorCb;
     let form = {};
@@ -57,6 +62,7 @@ describe("EntryUploader", () => {
       metadata: () => ({}),
       cancel: jest.fn(),
       error: jest.fn(),
+      fail: jest.fn(),
     };
     let config = { chunk_size: 1024, chunk_timeout: 5000 };
 
@@ -66,9 +72,109 @@ describe("EntryUploader", () => {
     channelErrorCb("closed");
 
     expect(cancelSubmit).toHaveBeenCalledTimes(1);
-    expect(cancelSubmit).toHaveBeenCalledWith(form);
+    expect(cancelSubmit).toHaveBeenCalledWith(form, {
+      reason: "upload-failed",
+      inputs: [entry.fileEl],
+    });
     expect(fakeChannel.leave).toHaveBeenCalledTimes(1);
     expect(entry.cancel).not.toHaveBeenCalled();
     expect(entry.error).not.toHaveBeenCalled();
+    expect(entry.fail).toHaveBeenCalledTimes(1);
+    expect(entry.fail).toHaveBeenCalledWith("writer_error", false);
+  });
+
+  test("fails an upload when a chunk push times out", () => {
+    let receives = new Map<string, () => void>();
+    let push = {
+      receive(kind, cb) {
+        receives.set(kind, cb);
+        return this;
+      },
+    };
+    let form = {};
+    let fakeChannel = {
+      isJoined: () => true,
+      push: jest.fn(() => push),
+      leave: jest.fn(),
+    };
+    let entry = {
+      ref: "0",
+      fileEl: { form },
+      view: { cancelSubmit: jest.fn() },
+      metadata: () => ({}),
+      error: jest.fn(),
+      progress: jest.fn(),
+    };
+    let config = { chunk_size: 1024, chunk_timeout: 5000 };
+    let uploader = new EntryUploader(entry, config, {
+      channel: () => fakeChannel,
+    });
+
+    uploader.pushChunk(new ArrayBuffer(1));
+    expect(fakeChannel.push).toHaveBeenCalledWith(
+      "chunk",
+      expect.any(ArrayBuffer),
+      config.chunk_timeout,
+    );
+    receives.get("timeout")!();
+
+    expect(entry.view.cancelSubmit).toHaveBeenCalledWith(form, {
+      reason: "upload-failed",
+      inputs: [entry.fileEl],
+    });
+    expect(fakeChannel.leave).toHaveBeenCalledTimes(1);
+    expect(entry.error).toHaveBeenCalledWith("timeout");
+    expect(entry.progress).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["error", "NotReadableError"],
+    ["abort", "aborted"],
+  ])("handles FileReader %s events", (event, message) => {
+    let reader = {
+      error:
+        event === "error"
+          ? new DOMException("The file could not be read", "NotReadableError")
+          : null,
+      onerror: null,
+      onabort: null,
+      onload: null,
+      readAsArrayBuffer: jest.fn(),
+    };
+    jest
+      .spyOn(window, "FileReader")
+      .mockImplementation(() => reader as unknown as FileReader);
+
+    let form = {};
+    let fakeChannel = {
+      leave: jest.fn(),
+    };
+    let fakeLiveSocket = { channel: () => fakeChannel };
+    let entry = {
+      ref: "0",
+      file: new File(["contents"], "file.txt"),
+      fileEl: { form },
+      view: { cancelSubmit: jest.fn(), logError: jest.fn() },
+      metadata: () => ({}),
+      error: jest.fn(),
+    };
+    let config = { chunk_size: 1024, chunk_timeout: 5000 };
+    let uploader = new EntryUploader(entry, config, fakeLiveSocket);
+
+    uploader.readNextChunk();
+    reader[`on${event}`]();
+
+    expect(reader.readAsArrayBuffer).toHaveBeenCalledTimes(1);
+    expect(entry.view.logError).toHaveBeenCalledWith(
+      "upload.read-failed",
+      expect.stringContaining(message),
+      { entry, offset: 0 },
+    );
+    expect(entry.view.cancelSubmit).toHaveBeenCalledWith(form, {
+      reason: "upload-failed",
+      inputs: [entry.fileEl],
+    });
+    expect(fakeChannel.leave).toHaveBeenCalledTimes(1);
+    expect(entry.error).toHaveBeenCalledWith("failed");
   });
 });

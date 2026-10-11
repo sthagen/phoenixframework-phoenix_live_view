@@ -19,15 +19,18 @@ export default class EntryUploader {
     }
     // A scheduled submit locks the upload input, so cancel it directly instead
     // of waiting for the input hook to observe the error diff.
-    this.entry.view.cancelSubmit(this.entry.fileEl.form);
+    this.entry.view.cancelSubmit(this.entry.fileEl.form, {
+      reason: "upload-failed",
+      inputs: [this.entry.fileEl],
+    });
     this.uploadChannel.leave();
     this.errored = true;
     this.chunkTimer != null && clearTimeout(this.chunkTimer);
     if (reason === "writer_error") {
       // The server already recorded the exact writer failure and retained the
-      // entry. Keep the uploader pending until the failed entry is cancelled
-      // and removed from the DOM, without sending a second, generic client
-      // error progress event.
+      // entry. Complete the failed entry to release the form, without sending
+      // a second, generic client error progress event.
+      this.entry.fail(reason, false);
       return;
     }
     this.entry.error(reason);
@@ -51,17 +54,19 @@ export default class EntryUploader {
       this.offset,
       this.chunkSize + this.offset,
     );
+    const onError = () => {
+      this.entry.view.logError(
+        "upload.read-failed",
+        "Read error: " + (reader.error || "aborted"),
+        { entry: this.entry, offset: this.offset },
+      );
+      this.error("failed");
+    };
+    reader.onerror = onError;
+    reader.onabort = onError;
     reader.onload = (e) => {
-      if (e.target?.error === null) {
-        this.offset += /** @type {ArrayBuffer} */ (e.target.result).byteLength;
-        this.pushChunk(/** @type {ArrayBuffer} */ (e.target.result));
-      } else {
-        return this.entry.view.logError(
-          "upload.read-failed",
-          "Read error: " + e.target?.error,
-          { entry: this.entry, offset: this.offset },
-        );
-      }
+      this.offset += /** @type {ArrayBuffer} */ (e.target.result).byteLength;
+      this.pushChunk(/** @type {ArrayBuffer} */ (e.target.result));
     };
     reader.readAsArrayBuffer(blob);
   }
@@ -81,6 +86,7 @@ export default class EntryUploader {
           );
         }
       })
-      .receive("error", ({ reason }) => this.error(reason));
+      .receive("error", ({ reason }) => this.error(reason))
+      .receive("timeout", () => this.error("timeout"));
   }
 }

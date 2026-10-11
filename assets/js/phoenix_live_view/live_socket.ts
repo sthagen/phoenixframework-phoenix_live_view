@@ -230,6 +230,8 @@ export interface LiveSocketOptions {
      * })
      * ```
      *
+     * Note: start callbacks must be called in the order they are received.
+     *
      * It is strongly advised to call start as quickly as possible.
      */
     onDocumentPatch?: (start: () => void) => void;
@@ -1573,7 +1575,12 @@ export default class LiveSocket {
           PHX_LIVE_LINK,
         ) as HTMLAnchorElement | null;
         const type = target && target.getAttribute(PHX_LIVE_LINK);
-        if (!type || !this.isConnected() || !this.main || DOM.wantsNewTab(e)) {
+        if (
+          !type ||
+          !this.isConnected() ||
+          !this.main ||
+          DOM.wantsNewTab(e, target)
+        ) {
           return;
         }
 
